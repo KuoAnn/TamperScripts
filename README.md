@@ -16,20 +16,20 @@
 
 | Install | Name | Memo |
 | --- | --- | --- |
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/baozi.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Baozi|包子漫畫鍵盤操作|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/CapitalLogin.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Capital Login|群益自動登入|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/CathayCardEvent.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Cathay Card Event|國泰卡片活動登錄|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/CathayLearn.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Cathay Learn|國泰自我學習網|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/CathayWifi.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Cathay Wifi|Cathay Wifi 自動登入|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Eyny.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Eyny|Eyny 論壇自動登入|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/LogKuoann.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Log Kuoann|LogKuoann 自動登入|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Slack-Polling.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Slack-Polling|Slack Auto Polling|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/TxTicket.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Tx Ticket|TxTicket|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/VDIAutoLogin.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|VDI Login|VDI Web Client 自動登入|
-|<a href="https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/YahooStock.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Yahoo Stock|Yahoo Stock Close banner|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Baozi|包子漫畫鍵盤操作|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/CapitalLogin.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Capital Login|群益自動登入|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Cathay Card Event|國泰卡片活動登錄|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayLearn.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Cathay Learn|國泰自我學習網|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayWifi.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Cathay Wifi|Cathay Wifi 自動登入|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/Eyny.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Eyny|Eyny 論壇自動登入|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/LogKuoann.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Log Kuoann|LogKuoann 自動登入|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/Slack-Polling.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Slack-Polling|Slack Auto Polling|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/TxTicket.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Tx Ticket|TxTicket|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/VDIAutoLogin.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|VDI Login|VDI Web Client 自動登入|
+|<a href="https://github.com/KuoAnn/TamperScripts/raw/main/src/YahooStock.user.js" target="_blank"><img src="https://user-images.githubusercontent.com/88981/169986095-a54f32bd-55a6-4de8-bad6-aa3b1874ce07.png" width="32"/></a>|Yahoo Stock|Yahoo Stock Close banner|
 
 ## Reference
 
 - [Tampermonkey • Documentation](https://www.tampermonkey.net/documentation.php)
   - [@run-at](https://www.tampermonkey.net/documentation.php#_run_at)
-- [Will 保哥 Github](https://github.com/doggy8088/TampermonkeyUserscripts)
+- [Will 保哥 Github](https://github.com/doggy8088/TamperScripts)
