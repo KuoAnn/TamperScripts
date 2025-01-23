@@ -7,8 +7,8 @@
 // @match        https://vdizone1/portal/webclient/index.html*
 // @match        https://cubvdi.cathaybk.com.tw/portal/webclient/index.html*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=cloud.vmwarehorizon.com
-// @downloadURL  https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/VDIAutoLogin.user.js
-// @updateURL    https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/VDIAutoLogin.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/VDIAutoLogin.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/VDIAutoLogin.user.js
 // @grant        none
 // ==/UserScript==
 const usr = "";

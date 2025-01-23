@@ -6,8 +6,8 @@
 // @author       KuoAnn
 // @match        https://tradeweb.capital.com.tw/
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=https://www.capitalfund.com.tw/
-// @downloadURL  https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/CapitalLogin.user.js
-// @updateURL    https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/CapitalLogin.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CapitalLogin.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CapitalLogin.user.js
 // @connect      maxbot.dropboxlike.com
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==

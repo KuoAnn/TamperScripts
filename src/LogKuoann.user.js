@@ -6,8 +6,8 @@
 // @author       KuoAnn
 // @match        https://log.kuoann.com/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=datalust.co
-// @downloadURL  https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/LogKuoann.user.js
-// @updateURL    https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/LogKuoann.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/LogKuoann.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/LogKuoann.user.js
 // @grant        none
 // ==/UserScript==
 const userName = "";

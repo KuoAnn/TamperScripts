@@ -6,8 +6,8 @@
 // @author       KuoAnn
 // @match        https://app.slack.com/client/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=slack.com
-// @downloadURL  https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/Slack-Polling.user.js
-// @updateURL    https://github.com/KuoAnn/TampermonkeyUserscripts/raw/refs/heads/main/src/Slack-Polling.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/Slack-Polling.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/Slack-Polling.user.js
 // @grant        none
 // ==/UserScript==
 
