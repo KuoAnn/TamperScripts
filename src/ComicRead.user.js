@@ -6,7 +6,7 @@
 // @description:en  Add enhanced features to the comic site for optimized experience, including dual-page reading and translation. E-Hentai (Associate nhentai, Quick favorite, Colorize tags, Floating tag list, etc.) | nhentai (Totally block comics, Auto page turning) | hitomi | Anchira | kemono | nekohouse | welovemanga.
 // @noframes
 // @match           https://18comic.vip/*
-// @match           https://www.dm5.com/*
+// @match           https://*.dm5.*/*
 // @match           https://articles.onemoreplace.tw/*
 // @connect         yamibo.com
 // @connect         dmzj.com
