@@ -1,32 +1,14 @@
 // ==UserScript==
 // @name            ComicRead
 // @namespace       ComicRead
-// @version         11.4.2
+// @version         11.4.3
 // @description     为漫画站增加双页阅读、翻译等优化体验的增强功能。百合会（记录阅读历史、自动签到等）、百合会新站、动漫之家（解锁隐藏漫画）、E-Hentai（关联 nhentai、快捷收藏、标签染色、识别广告页等）、nhentai（彻底屏蔽漫画、无限滚动）、Yurifans（自动签到）、拷贝漫画(copymanga)（显示最后阅读记录、解锁隐藏漫画）、PonpomuYuri、再漫画、明日方舟泰拉记事社、禁漫天堂、漫画柜(manhuagui)、漫画DB(manhuadb)、动漫屋(dm5)、绅士漫画(wnacg)、mangabz、komiic、MangaDex、NoyAcg、無限動漫、新新漫画、熱辣漫畫、hitomi、SchaleNetwork、kemono、nekohouse、コミックグロウル、welovemanga、Tachidesk
 // @description:en  Add enhanced features to the comic site for optimized experience, including dual-page reading and translation. E-Hentai (Associate nhentai, Quick favorite, Colorize tags, Floating tag list, etc.) | nhentai (Totally block comics, Auto page turning) | hitomi | Anchira | kemono | nekohouse | welovemanga.
 // @noframes
-// @match           https://18comic.vip/*
-// @match           https://*.dm5.*/*
-// @match           https://articles.onemoreplace.tw/*
-// @connect         yamibo.com
-// @connect         dmzj.com
-// @connect         idmzj.com
-// @connect         exhentai.org
-// @connect         e-hentai.org
-// @connect         hath.network
-// @connect         nhentai.net
-// @connect         hypergryph.com
-// @connect         mangabz.com
-// @connect         copymanga.site
-// @connect         copymanga.info
-// @connect         copymanga.net
-// @connect         copymanga.org
-// @connect         copymanga.tv
-// @connect         mangacopy.com
-// @connect         xsskc.com
-// @connect         schale.network
-// @connect         self
-// @connect         127.0.0.1
+// @match           *://*.18comic.vip/*
+// @match           *://*.dm5.com/*
+// @match           *://*.onemoreplace.tw/*
+// @match           *://*.manhuagui.com/*
 // @connect         *
 // @grant           GM_addElement
 // @grant           GM_getResourceText
