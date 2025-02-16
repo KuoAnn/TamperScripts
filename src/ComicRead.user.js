@@ -32,6 +32,8 @@
 // @resource        dmzjDecrypt https://greasyfork.org/scripts/467177/code/dmzjDecrypt.js?version=1207199
 // @resource        solid-js|store https://registry.npmmirror.com/solid-js/1.9.1/files/store/dist/store.cjs
 // @resource        solid-js|web https://registry.npmmirror.com/solid-js/1.9.1/files/web/dist/web.cjs
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/ComicRead.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/ComicRead.user.js
 // ==/UserScript==
 
 
