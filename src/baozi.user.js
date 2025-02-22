@@ -39,10 +39,10 @@ const alert = (str, timeout) => {
 
 (function () {
     "use strict";
-    addHotkey();
     const hostname = window.location.hostname;
     if (hostname === "www.twmanga.com") {
         saveLastRead();
+        addHotkey();
     } else if (hostname === "www.baozimh.com") {
         loader = setInterval(handleLoader, 500);
     }
