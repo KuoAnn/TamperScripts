@@ -2,7 +2,7 @@
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
 // @version      1.0.5
-// @description  包子漫畫：簡化介面、已讀紀錄、鍵盤控制翻頁，W: 上滾，S: 下滾，A: 上一頁，D: 下一頁
+// @description  包子漫畫：簡化介面、已讀紀錄、鍵盤控制翻頁 (W:上 S:下 A/←:上一話 D/→:下一話 F:全螢幕)
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @match        https://www.baozimh.com/comic/*
@@ -137,6 +137,7 @@ const alert = (function () {
         console.log("add hotkey");
         const handleKeydown = (e) => {
             const links = document.querySelectorAll(".next_chapter a");
+            console.log(e.key);
             switch (e.key) {
                 case "w":
                     window.scrollBy({
@@ -158,6 +159,7 @@ const alert = (function () {
                         });
                     }
                     break;
+                case " ":
                 case "PageDown":
                     // 若滾到底部，自動點擊下一頁
                     if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) {
