@@ -5,8 +5,8 @@
 // @description  try to take over the world!
 // @match        https://w3.cathaylife.com.tw/eai/ZPWeb/login.jsp
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=https://www.cathaybk.com.tw%2fcathaybk
-// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayWifi.user.js
-// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayWifi.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayWifi.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayWifi.user.js
 // @grant        none
 // ==/UserScript==
 const userName = "";

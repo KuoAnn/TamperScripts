@@ -6,8 +6,8 @@
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=twmanga.com
-// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/Baozi.user.js
-// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/Baozi.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
 // @grant        none
 // ==/UserScript==
 

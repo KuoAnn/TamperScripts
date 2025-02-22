@@ -8,8 +8,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=tixcraft.com
 // @connect      maxbot.dropboxlike.com
 // @connect      asia-east1-futureminer.cloudfunctions.net
-// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/TxTicket.user.js
-// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/TxTicket.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/TxTicket.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/TxTicket.user.js
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==
 // 個人參數

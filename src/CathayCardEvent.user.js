@@ -7,8 +7,8 @@
 // @match        https://www.cathaybk.com.tw/promotion*
 // @connect      maxbot.dropboxlike.com
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=https://www.cathaybk.com.tw%2fcathaybk
-// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayCardEvent.user.js
-// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayCardEvent.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==
 

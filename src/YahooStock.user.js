@@ -6,8 +6,8 @@
 // @author       KuoAnn
 // @match        https://tw.stock.yahoo.com/quote/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=yahoo.com
-// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/YahooStock.user.js
-// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/YahooStock.user.js
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/YahooStock.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/YahooStock.user.js
 // @grant        none
 // ==/UserScript==
 
