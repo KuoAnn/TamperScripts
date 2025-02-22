@@ -100,8 +100,8 @@ const alert = (str, timeout) => {
     }
 
     function addHotkey() {
-        const clickNext = () => document.querySelector("a#next-chapter").click();
-        const clickPrev = () => document.querySelector("a#prev-chapter").click();
+        const clickNext = () => document.querySelector("a#next-chapter")?.click();
+        const clickPrev = () => document.querySelector("a#prev-chapter")?.click();
         const autoNextPage = () => {
             if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) clickNext();
         };
