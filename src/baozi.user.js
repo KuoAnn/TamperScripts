@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
-// @description  包子漫畫內透過鍵盤控制翻頁，W: 上滾，S: 下滾，A: 上一頁，D: 下一頁
+// @version      1.0.5
+// @description  包子漫畫：簡化介面、已讀紀錄、鍵盤控制翻頁，W: 上滾，S: 下滾，A: 上一頁，D: 下一頁
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @match        https://www.baozimh.com/comic/*
@@ -13,6 +13,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @grant        GM_addElement
 // ==/UserScript==
 
 GM_addStyle(".alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}");
@@ -20,24 +21,17 @@ GM_addStyle(".alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;
 GM_addStyle("#__nuxt{padding:0}");
 GM_addStyle(".clearReadBtn{margin-left:6px;max-height:42px;}");
 
-let _isLoaded = false;
+const messages = [];
 let loader;
-let messages = [];
+let _isLoaded = false;
 
 // override alert
-const alertContainer = document.createElement("div");
-alertContainer.className = "alertContainer";
-document.body.appendChild(alertContainer);
-
+const alertContainer = GM_addElement(document.body, "div", { class: "alertContainer" });
 const alert = (function () {
     return function (str) {
-        var message = document.createElement("div");
-        message.className = "alertMessage";
-        message.innerText = str;
-        alertContainer.appendChild(message);
+        const message = GM_addElement(alertContainer, "div", { class: "alertMessage", textContent: str });
         messages.push(message);
-
-        if (messages.length > 3) {
+        if (messages.length > 10) {
             var oldMessage = messages.shift();
             if (alertContainer.contains(oldMessage)) {
                 alertContainer.removeChild(oldMessage);
@@ -113,30 +107,24 @@ const alert = (function () {
             if (lastRead) {
                 const values = JSON.parse(lastRead);
                 Array.from(values).forEach((value) => {
-                    const lastReadEleA = document.querySelectorAll(
-                        `a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`
-                    );
+                    const lastReadEleA = document.querySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
                     if (lastReadEleA) {
                         lastReadEleA.forEach((ele) => {
-                            ele.style.backgroundColor = "lightgray";
+                            ele.style.backgroundColor = "#ffd706";
                         });
                     }
                 });
 
                 // add clear GM_deleteValue button
-                const clearReadBtn = document.createElement("button");
-                clearReadBtn.textContent = "清除已讀";
-                clearReadBtn.className = "clearReadBtn";
-                clearReadBtn.onclick = () => {
+                const addBookshelf = document.querySelector(".action-buttons");
+                const btn = GM_addElement(addBookshelf, "button", { class: "clearReadBtn", textContent: "清除已讀" });
+                btn.addEventListener("click", () => {
                     GM_deleteValue(key);
                     alert("已清除紀錄");
                     window.location.reload();
-                };
-                // append clearBtn next to .add_bookshelf
-                const addBookshelf = document.querySelector(".add_bookshelf");
-                if (addBookshelf) {
-                    addBookshelf.parentNode.appendChild(clearReadBtn);
-                }
+                });
+            } else {
+                alert("無已讀紀錄");
             }
         } catch (error) {
             console.error(`showLastRead Error: ${error}\n${url}`);
