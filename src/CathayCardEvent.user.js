@@ -43,8 +43,8 @@ let _isLoaded = false;
     const alert = (function () {
         var alertContainer = document.createElement("div");
         alertContainer.style.position = "fixed";
-        alertContainer.style.top = "0";
-        alertContainer.style.left = "0";
+        alertContainer.style.top = "6px";
+        alertContainer.style.left = "6px";
         alertContainer.style.zIndex = "9999";
         alertContainer.style.pointerEvents = "none";
         document.body.appendChild(alertContainer);
@@ -53,7 +53,7 @@ let _isLoaded = false;
 
         return function (str) {
             var message = document.createElement("div");
-            message.style.background = "rgba(0, 0, 0, 0.7)";
+            message.style.background = "rgba(94, 39, 0, 0.7)";
             message.style.color = "white";
             message.style.padding = "4px";
             message.style.margin = "2px";

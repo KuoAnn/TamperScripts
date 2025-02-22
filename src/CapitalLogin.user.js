@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Capital Login
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  try to take over the world!
 // @author       KuoAnn
 // @match        https://tradeweb.capital.com.tw/
@@ -24,6 +24,47 @@ const SUBMIT_SELECTOR = "#login-btn";
 let _captchaBase64 = "";
 let _isLoaded = false;
 let _isSubmit = false;
+
+const alert = (function () {
+    var alertContainer = document.createElement("div");
+    alertContainer.style.position = "fixed";
+    alertContainer.style.top = "6px";
+    alertContainer.style.left = "6px";
+    alertContainer.style.zIndex = "9999";
+    alertContainer.style.pointerEvents = "none";
+    document.body.appendChild(alertContainer);
+
+    var messages = [];
+
+    return function (str) {
+        var message = document.createElement("div");
+        message.style.background = "rgba(94, 39, 0, 0.7)";
+        message.style.color = "white";
+        message.style.padding = "4px";
+        message.style.margin = "4px";
+        message.style.borderRadius = "5px";
+        message.style.pointerEvents = "auto";
+        message.style.fontSize = "14px";
+        message.innerText = str;
+
+        alertContainer.appendChild(message);
+        let currentTime = new Date().toLocaleTimeString("en-GB", { hour12: false });
+        messages.push(`${currentTime} ${message}`);
+
+        if (messages.length > 20) {
+            var oldMessage = messages.shift();
+            if (alertContainer.contains(oldMessage)) {
+                alertContainer.removeChild(oldMessage);
+            }
+        }
+
+        setTimeout(function () {
+            if (alertContainer.contains(message)) {
+                alertContainer.removeChild(message);
+            }
+        }, 5000);
+    };
+})();
 
 (function () {
     "use strict";
@@ -86,6 +127,8 @@ let _isSubmit = false;
     }
 
     function setCaptchaAndSubmit(image_data) {
+        alert("Start OCR");
+
         GM_xmlhttpRequest({
             method: "POST",
             url: CAPTCHA_API_URL,
@@ -94,7 +137,7 @@ let _isSubmit = false;
             },
             data: JSON.stringify({ image_data: image_data }),
             onload: function (r) {
-                console.log(r.responseText);
+                alert(r.responseText);
                 if (r.status == 200) {
                     let answer = JSON.parse(r.responseText).answer;
                     answer = answer.replace(/[gq]/g, "9");
