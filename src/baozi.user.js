@@ -10,6 +10,8 @@
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
 // @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_setValue
 // ==/UserScript==
 
 GM_addStyle(".alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}");
@@ -50,46 +52,115 @@ const alert = (function () {
 (function () {
     "use strict";
 
-    if (window.location.hostname === "www.baozimh.com") {
-        console.log("trigger");
-        loader = setInterval(() => {
-            handleLoader();
-        }, 500);
+    const hostname = window.location.hostname;
+    switch (hostname) {
+        case "www.twmanga.com":
+            addHotkey();
+            saveLastRead();
+            break;
+        case "www.baozimh.com":
+            loader = setInterval(() => {
+                handleLoader();
+            }, 500);
+            break;
     }
 
-    // hotkey
-    const handleKeydown = (e) => {
-        const links = document.querySelectorAll(".next_chapter a");
-        switch (e.key) {
-            case "w":
-                window.scrollBy({
-                    top: -window.innerHeight * 0.92,
-                    behavior: "smooth",
-                });
-                break;
-            case "s":
-                window.scrollBy({
-                    top: window.innerHeight * 0.92,
-                    behavior: "smooth",
-                });
-                break;
-            case "a":
-                links.forEach((link) => {
-                    if (link.textContent.includes("上一")) {
-                        link.click();
+    function saveLastRead() {
+        const url = window.location.href;
+        try {
+            const regex = /comic\/chapter\/([^\/]+)\/(\d+)_(\d+)(?:_(\d+))?.html/;
+            const match = url.match(regex);
+
+            if (match) {
+                const key = match[1];
+                const value = {
+                    section_slot: match[2],
+                    chapter_slot: match[3],
+                };
+                console.log("saveLastRead: ", key, value);
+                const lastRead = GM_getValue(key);
+                if (lastRead) {
+                    const lastReadArr = Array.from(JSON.parse(lastRead));
+                    const isExist = lastReadArr.some((ele) => ele.section_slot === value.section_slot && ele.chapter_slot === value.chapter_slot);
+                    if (!isExist) {
+                        lastReadArr.push(value);
+                        GM_setValue(key, JSON.stringify(lastReadArr));
                     }
-                });
-                break;
-            case "d":
-                links.forEach((link) => {
-                    if (link.textContent.includes("下一")) {
-                        link.click();
-                    }
-                });
-                break;
+                } else {
+                    GM_setValue(key, JSON.stringify([value]));
+                }
+
+                console.log("Final LastRead: ", GM_getValue(key));
+            } else {
+                console.error(`URL 格式不正確\n${url}`);
+            }
+        } catch (error) {
+            console.error(`saveLastRead Error: ${error}\n${url}`);
+            alert(`saveLastRead Error: ${error}`);
         }
-    };
-    document.addEventListener("keydown", handleKeydown);
+    }
+
+    function showLastRead() {
+        const url = window.location.href;
+        try {
+            const urlObj = new URL(url);
+            const key = urlObj.pathname.split("/").pop();
+            const lastRead = GM_getValue(key);
+            console.log("showLastRead: ", key, lastRead);
+            if (lastRead) {
+                const values = JSON.parse(lastRead);
+                Array.from(values).forEach((value) => {
+                    const lastReadEleA = document.querySelectorAll(
+                        `a[href$="section_slot=${value.section_slot}&chapter_slot=${value.chapter_slot}"]`
+                    );
+                    if (lastReadEleA) {
+                        lastReadEleA.forEach((ele) => {
+                            ele.style.backgroundColor = "lightgray";
+                        });
+                    }
+                });
+            }
+        } catch (error) {
+            console.error(`showLastRead Error: ${error}\n${url}`);
+            alert(`showLastRead Error: ${error}`);
+        }
+    }
+
+    function addHotkey() {
+        console.log("add hotkey");
+        const handleKeydown = (e) => {
+            const links = document.querySelectorAll(".next_chapter a");
+            switch (e.key) {
+                case "w":
+                    window.scrollBy({
+                        top: -window.innerHeight * 0.92,
+                        behavior: "smooth",
+                    });
+                    break;
+                case "s":
+                    window.scrollBy({
+                        top: window.innerHeight * 0.92,
+                        behavior: "smooth",
+                    });
+                    break;
+                case "a":
+                    links.forEach((link) => {
+                        if (link.textContent.includes("上一")) {
+                            link.click();
+                        }
+                    });
+                    break;
+                case "d":
+                    links.forEach((link) => {
+                        if (link.textContent.includes("下一")) {
+                            link.click();
+                        }
+                    });
+                    break;
+            }
+        };
+        document.addEventListener("keydown", handleKeydown);
+    }
 
     function handleLoader() {
         const sectionTitles = document.querySelectorAll(".section-title");
@@ -113,8 +184,6 @@ const alert = (function () {
                     // console.log("優化最新章節");
                     // sortCapters(sectionTitle.nextElementSibling);
                 } else if (sectionTitle.textContent.indexOf("章節目錄") > -1) {
-                    console.log("優化章節目錄");
-                    console.log("將其他章節加入章節目錄");
                     const chapterItems = document.querySelector("#chapter-items");
                     const chapters_other_list = document.querySelector("#chapters_other_list");
                     if (chapters_other_list) {
@@ -127,6 +196,8 @@ const alert = (function () {
                     sortCapters(chapterItems);
                 }
             });
+
+            showLastRead();
         }
     }
 
@@ -157,9 +228,9 @@ const alert = (function () {
                 const numB = parseFloat(b.textContent.match(/(\d+(\.\d+)?)/)[0]);
                 return numB - numA;
             } catch (error) {
-                // const errMsg = `Sort Error: ${error} ${a.textContent}|${b.textContent}`;
-                // alert(errMsg);
-                // console.error(errMsg);
+                const errMsg = `Sort Error: ${error} ${a.textContent}|${b.textContent}`;
+                alert(errMsg);
+                console.error(errMsg);
                 // 預設反序
                 return a > b ? 1 : -1;
             }
