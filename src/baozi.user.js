@@ -49,10 +49,11 @@ const alert = (function () {
 (function () {
     "use strict";
 
+    addHotkey();
+
     const hostname = window.location.hostname;
     switch (hostname) {
         case "www.twmanga.com":
-            addHotkey();
             saveLastRead();
             break;
         case "www.baozimh.com":
@@ -139,15 +140,33 @@ const alert = (function () {
             switch (e.key) {
                 case "w":
                     window.scrollBy({
-                        top: -window.innerHeight * 0.92,
+                        top: -window.innerHeight * 0.9,
                         behavior: "smooth",
                     });
                     break;
                 case "s":
                     window.scrollBy({
-                        top: window.innerHeight * 0.92,
+                        top: window.innerHeight * 0.9,
                         behavior: "smooth",
                     });
+                    // 若滾到底部，自動點擊下一頁
+                    if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) {
+                        links.forEach((link) => {
+                            if (link.textContent.includes("下一")) {
+                                link.click();
+                            }
+                        });
+                    }
+                    break;
+                case "PageDown":
+                    // 若滾到底部，自動點擊下一頁
+                    if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) {
+                        links.forEach((link) => {
+                            if (link.textContent.includes("下一")) {
+                                link.click();
+                            }
+                        });
+                    }
                     break;
                 case "a":
                     links.forEach((link) => {
@@ -162,6 +181,13 @@ const alert = (function () {
                             link.click();
                         }
                     });
+                    break;
+                case "f":
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                    } else {
+                        document.documentElement.requestFullscreen();
+                    }
                     break;
             }
         };
