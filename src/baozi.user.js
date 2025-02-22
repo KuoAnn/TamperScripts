@@ -27,93 +27,66 @@ const messages = [];
 let loader,
     _isLoaded = false;
 const alertContainer = GM_addElement(document.body, "div", { class: "alertContainer" });
-// 使用箭頭函式精簡 alert 定義
-const alert = (str) => {
+const alert = (str, timeout) => {
     const message = GM_addElement(alertContainer, "div", { class: "alertMessage", textContent: str });
     messages.push(message);
     if (messages.length > 10) {
         const old = messages.shift();
         alertContainer.contains(old) && alertContainer.removeChild(old);
     }
-    setTimeout(() => alertContainer.contains(message) && alertContainer.removeChild(message), 3000);
+    setTimeout(() => alertContainer.contains(message) && alertContainer.removeChild(message), timeout > 0 ? timeout : 3000);
 };
 
 (function () {
     "use strict";
-
     addHotkey();
-
     const hostname = window.location.hostname;
-    switch (hostname) {
-        case "www.twmanga.com":
-            saveLastRead();
-            break;
-        case "www.baozimh.com":
-            loader = setInterval(() => {
-                handleLoader();
-            }, 500);
-            break;
+    if (hostname === "www.twmanga.com") {
+        saveLastRead();
+    } else if (hostname === "www.baozimh.com") {
+        loader = setInterval(handleLoader, 500);
     }
 
     function saveLastRead() {
         const url = window.location.href;
-        try {
-            const regex = /comic\/chapter\/([^\/]+)\/(\d+)_(\d+)(?:_(\d+))?.html/;
-            const match = url.match(regex);
-
-            if (match) {
-                const key = match[1];
-                const value = {
-                    ss: match[2],
-                    cs: match[3],
-                };
-                console.log("saveLastRead: ", key, value);
-                const lastRead = GM_getValue(key);
-                if (lastRead) {
-                    const lastReadArr = Array.from(JSON.parse(lastRead));
-                    const isExist = lastReadArr.some((ele) => ele.ss === value.ss && ele.cs === value.cs);
-                    if (!isExist) {
-                        lastReadArr.push(value);
-                        GM_setValue(key, JSON.stringify(lastReadArr));
-                    }
-                } else {
-                    GM_setValue(key, JSON.stringify([value]));
-                }
-
-                console.log("Final LastRead: ", GM_getValue(key));
-            } else {
-                console.error(`URL 格式不正確\n${url}`);
-            }
-        } catch (error) {
-            console.error(`saveLastRead Error: ${error}\n${url}`);
-            alert(`saveLastRead Error: ${error}`);
+        const regex = /comic\/chapter\/([^\/]+)\/(\d+)_(\d+)(?:_(\d+))?.html/;
+        const match = url.match(regex);
+        if (!match) {
+            console.error(`URL 格式不正確\n${url}`);
+            return;
         }
+        const key = match[1];
+        const value = { ss: match[2], cs: match[3] };
+        console.log("saveLastRead:", key, value);
+        alert(`已讀 ${value.ss}-${value.cs}`, 5000);
+        const reads = GM_getValue(key) ? JSON.parse(GM_getValue(key)) : [];
+        if (!reads.some((ele) => ele.ss === value.ss && ele.cs === value.cs)) {
+            reads.push(value);
+            GM_setValue(key, JSON.stringify(reads));
+        } else {
+            GM_setValue(key, JSON.stringify([value]));
+        }
+        console.log("Final LastRead:", GM_getValue(key));
     }
 
     function showLastRead() {
         const url = window.location.href;
         try {
-            const urlObj = new URL(url);
-            const key = urlObj.pathname.split("/").pop();
+            const key = new URL(url).pathname.split("/").pop();
             const lastRead = GM_getValue(key);
-            console.log("showLastRead: ", key, lastRead);
+            console.log("showLastRead:", key, lastRead);
             if (lastRead) {
-                const values = JSON.parse(lastRead);
-                Array.from(values).forEach((value) => {
-                    const lastReadEleA = document.querySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
-                    if (lastReadEleA) {
-                        lastReadEleA.forEach((ele) => {
-                            ele.style.backgroundColor = "#ffd706";
-                        });
-                    }
+                JSON.parse(lastRead).forEach((value) => {
+                    document
+                        .querySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`)
+                        .forEach((ele) => (ele.style.backgroundColor = "#ffd706"));
                 });
-
                 const addBookshelf = document.querySelector(".action-buttons");
                 const btn = GM_addElement(addBookshelf, "button", { class: "clearReadBtn", textContent: "清除閱讀紀錄" });
                 btn.addEventListener("click", () => {
-                    let comicTitle = document.querySelector(".comics-detail__title").textContent ?? "";
-                    if (comicTitle) comicTitle = comicTitle.replaceAll("\n", "").trim();
-                    if (confirm(`確定要清除 ${comicTitle} 的閱讀紀錄嗎？`)) {
+                    const titleEle = document.querySelector(".comics-detail__title");
+                    const comicTitle = titleEle?.textContent?.replace(/\n/g, "").trim() || "";
+                    if (comicTitle && confirm(`確定要清除 ${comicTitle} 的閱讀紀錄嗎？`)) {
                         GM_deleteValue(key);
                         alert("已清除閱讀紀錄");
                         window.location.reload();
@@ -129,37 +102,31 @@ const alert = (str) => {
     }
 
     function addHotkey() {
-        console.log("add hotkey");
-        const clickNext = () => {
-            document.querySelectorAll(".next_chapter a").forEach((link) => {
-                if (link.textContent.includes("下一")) link.click();
-            });
+        const clickNext = () => document.querySelector("a#next-chapter").click();
+        const clickPrev = () => document.querySelector("a#prev-chapter").click();
+        const autoNextPage = () => {
+            if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) clickNext();
         };
-        const clickPrev = () => {
-            document.querySelectorAll(".next_chapter a").forEach((link) => {
-                if (link.textContent.includes("上一")) link.click();
-            });
+        const autoPrevPage = () => {
+            if (window.scrollY <= 10) clickPrev();
         };
 
         document.addEventListener("keydown", (e) => {
-            const links = document.querySelectorAll(".next_chapter a");
             switch (e.key) {
                 case "w":
-                    window.scrollBy({
-                        top: -window.innerHeight * 0.9,
-                        behavior: "smooth",
-                    });
+                    window.scrollBy({ top: -window.innerHeight * 0.9, behavior: "smooth" });
+                    autoPrevPage();
                     break;
                 case "s":
-                    window.scrollBy({
-                        top: window.innerHeight * 0.9,
-                        behavior: "smooth",
-                    });
+                    window.scrollBy({ top: window.innerHeight * 0.9, behavior: "smooth" });
                     autoNextPage();
                     break;
                 case " ":
                 case "PageDown":
                     autoNextPage();
+                    break;
+                case "PageUp":
+                    autoPrevPage();
                     break;
                 case "a":
                     clickPrev();
@@ -168,107 +135,50 @@ const alert = (str) => {
                     clickNext();
                     break;
                 case "f":
-                    if (document.fullscreenElement) {
-                        document.exitFullscreen();
-                    } else {
-                        document.documentElement.requestFullscreen();
-                    }
+                    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
                     break;
             }
         });
-
         document.addEventListener("wheel", (e) => {
-            if (e.deltaY > 0) {
-                autoNextPage();
-            }
+            e.deltaY > 0 ? autoNextPage() : autoPrevPage();
         });
-
-        function autoNextPage() {
-            // 若滾到底部，自動點擊下一頁
-            if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) clickNext();
-        }
     }
 
     function handleLoader() {
-        const sectionTitles = document.querySelectorAll(".section-title");
-        if (sectionTitles && !_isLoaded) {
+        if (!_isLoaded && document.querySelectorAll(".section-title").length) {
             _isLoaded = true;
             clearInterval(loader);
             console.log("Loaded");
-            // remove useless elements
             rmEles(".l-content", "猜你喜歡");
             rmEles(".footer");
             rmEles(".recommend");
             rmEles(".addthis-box");
-            // click button which text contains "查看全部"
-            const viewAllBtns = document.querySelectorAll("button");
-            viewAllBtns.forEach((btn) => {
-                if (btn.textContent.indexOf("查看全部") > -1) {
-                    btn.click();
-                }
-            });
-
-            sectionTitles.forEach((sectionTitle) => {
-                if (sectionTitle.textContent.indexOf("最新章節") > -1) {
-                    // console.log("優化最新章節");
-                    // sortCapters(sectionTitle.nextElementSibling);
-                } else if (sectionTitle.textContent.indexOf("章節目錄") > -1) {
+            document.querySelectorAll("button").forEach((btn) => btn.textContent.includes("查看全部") && btn.click());
+            document.querySelectorAll(".section-title").forEach((sectionTitle) => {
+                if (sectionTitle.textContent.includes("章節目錄")) {
                     const chapterItems = document.querySelector("#chapter-items");
-                    const chapters_other_list = document.querySelector("#chapters_other_list");
-                    if (chapters_other_list) {
-                        // 將其他章節加入章節目錄
-                        const otherList = chapters_other_list.querySelectorAll(":scope > div");
-                        otherList.forEach((chapter) => {
-                            chapterItems.appendChild(chapter);
-                        });
-                    }
+                    const chaptersOther = document.querySelector("#chapters_other_list");
+                    chaptersOther && chaptersOther.querySelectorAll(":scope > div").forEach((chapter) => chapterItems.appendChild(chapter));
                     sortCapters(chapterItems);
                 }
             });
-
             showLastRead();
         }
     }
 
     function rmEles(selector, text) {
-        const eles = document.querySelectorAll(selector);
-        try {
-            if (eles) {
-                eles.forEach((ele) => {
-                    if (text) {
-                        if (ele.textContent.indexOf(text) > -1) {
-                            ele.remove();
-                        }
-                    } else {
-                        ele.remove();
-                    }
-                });
-            }
-        } catch (error) {
-            console.error(`Remove Error: ${error}`);
-        }
+        document.querySelectorAll(selector).forEach((ele) => {
+            if (!text || ele.textContent.includes(text)) ele.remove();
+        });
     }
 
     function sortCapters(eleChapters) {
-        let chapters = eleChapters.querySelectorAll(":scope > div");
-        chapters = Array.from(chapters).sort((a, b) => {
-            try {
-                const numA = parseFloat(a.textContent.match(/(\d+(\.\d+)?)/)[0]);
-                const numB = parseFloat(b.textContent.match(/(\d+(\.\d+)?)/)[0]);
-                return numB - numA;
-            } catch (error) {
-                const errMsg = `Sort Error: ${error} ${a.textContent}|${b.textContent}`;
-                alert(errMsg);
-                console.error(errMsg);
-                // 預設反序
-                return a > b ? 1 : -1;
-            }
+        const chapters = Array.from(eleChapters.querySelectorAll(":scope > div")).sort((a, b) => {
+            const numA = parseFloat(a.textContent.match(/(\d+(\.\d+)?)/)?.[0] || 0);
+            const numB = parseFloat(b.textContent.match(/(\d+(\.\d+)?)/)?.[0] || 0);
+            return numB - numA;
         });
-
-        // 清空原有的章節並重新加入反序後的章節
         eleChapters.innerHTML = "";
-        Array.from(chapters).forEach((chapter) => {
-            eleChapters.appendChild(chapter);
-        });
+        chapters.forEach((chapter) => eleChapters.appendChild(chapter));
     }
 })();
