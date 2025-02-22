@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  包子漫畫：簡化介面、已讀紀錄、鍵盤控制翻頁 (W:上 S:下 A/←:上一話 D/→:下一話 F:全螢幕)
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -16,35 +16,27 @@
 // @grant        GM_addElement
 // ==/UserScript==
 
-GM_addStyle(".alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}");
-GM_addStyle(".alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}");
-GM_addStyle("#__nuxt{padding:0}");
-GM_addStyle(".clearReadBtn{margin-left:6px;max-height:42px;}");
+GM_addStyle(`
+  .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
+  .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
+  #__nuxt{padding:0}
+  .clearReadBtn{margin-left:6px;max-height:42px;}
+`);
 
 const messages = [];
-let loader;
-let _isLoaded = false;
-
-// override alert
+let loader,
+    _isLoaded = false;
 const alertContainer = GM_addElement(document.body, "div", { class: "alertContainer" });
-const alert = (function () {
-    return function (str) {
-        const message = GM_addElement(alertContainer, "div", { class: "alertMessage", textContent: str });
-        messages.push(message);
-        if (messages.length > 10) {
-            var oldMessage = messages.shift();
-            if (alertContainer.contains(oldMessage)) {
-                alertContainer.removeChild(oldMessage);
-            }
-        }
-
-        setTimeout(function () {
-            if (alertContainer.contains(message)) {
-                alertContainer.removeChild(message);
-            }
-        }, 3000);
-    };
-})();
+// 使用箭頭函式精簡 alert 定義
+const alert = (str) => {
+    const message = GM_addElement(alertContainer, "div", { class: "alertMessage", textContent: str });
+    messages.push(message);
+    if (messages.length > 10) {
+        const old = messages.shift();
+        alertContainer.contains(old) && alertContainer.removeChild(old);
+    }
+    setTimeout(() => alertContainer.contains(message) && alertContainer.removeChild(message), 3000);
+};
 
 (function () {
     "use strict";
@@ -116,16 +108,19 @@ const alert = (function () {
                     }
                 });
 
-                // add clear GM_deleteValue button
                 const addBookshelf = document.querySelector(".action-buttons");
-                const btn = GM_addElement(addBookshelf, "button", { class: "clearReadBtn", textContent: "清除已讀" });
+                const btn = GM_addElement(addBookshelf, "button", { class: "clearReadBtn", textContent: "清除閱讀紀錄" });
                 btn.addEventListener("click", () => {
-                    GM_deleteValue(key);
-                    alert("已清除紀錄");
-                    window.location.reload();
+                    let comicTitle = document.querySelector(".comics-detail__title").textContent ?? "";
+                    if (comicTitle) comicTitle = comicTitle.replaceAll("\n", "").trim();
+                    if (confirm(`確定要清除 ${comicTitle} 的閱讀紀錄嗎？`)) {
+                        GM_deleteValue(key);
+                        alert("已清除閱讀紀錄");
+                        window.location.reload();
+                    }
                 });
             } else {
-                alert("無已讀紀錄");
+                alert("無閱讀紀錄");
             }
         } catch (error) {
             console.error(`showLastRead Error: ${error}\n${url}`);
@@ -135,9 +130,19 @@ const alert = (function () {
 
     function addHotkey() {
         console.log("add hotkey");
-        const handleKeydown = (e) => {
+        const clickNext = () => {
+            document.querySelectorAll(".next_chapter a").forEach((link) => {
+                if (link.textContent.includes("下一")) link.click();
+            });
+        };
+        const clickPrev = () => {
+            document.querySelectorAll(".next_chapter a").forEach((link) => {
+                if (link.textContent.includes("上一")) link.click();
+            });
+        };
+
+        document.addEventListener("keydown", (e) => {
             const links = document.querySelectorAll(".next_chapter a");
-            console.log(e.key);
             switch (e.key) {
                 case "w":
                     window.scrollBy({
@@ -150,39 +155,17 @@ const alert = (function () {
                         top: window.innerHeight * 0.9,
                         behavior: "smooth",
                     });
-                    // 若滾到底部，自動點擊下一頁
-                    if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) {
-                        links.forEach((link) => {
-                            if (link.textContent.includes("下一")) {
-                                link.click();
-                            }
-                        });
-                    }
+                    autoNextPage();
                     break;
                 case " ":
                 case "PageDown":
-                    // 若滾到底部，自動點擊下一頁
-                    if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) {
-                        links.forEach((link) => {
-                            if (link.textContent.includes("下一")) {
-                                link.click();
-                            }
-                        });
-                    }
+                    autoNextPage();
                     break;
                 case "a":
-                    links.forEach((link) => {
-                        if (link.textContent.includes("上一")) {
-                            link.click();
-                        }
-                    });
+                    clickPrev();
                     break;
                 case "d":
-                    links.forEach((link) => {
-                        if (link.textContent.includes("下一")) {
-                            link.click();
-                        }
-                    });
+                    clickNext();
                     break;
                 case "f":
                     if (document.fullscreenElement) {
@@ -192,8 +175,18 @@ const alert = (function () {
                     }
                     break;
             }
-        };
-        document.addEventListener("keydown", handleKeydown);
+        });
+
+        document.addEventListener("wheel", (e) => {
+            if (e.deltaY > 0) {
+                autoNextPage();
+            }
+        });
+
+        function autoNextPage() {
+            // 若滾到底部，自動點擊下一頁
+            if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) clickNext();
+        }
     }
 
     function handleLoader() {
