@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
-// @description  try to take over the world!
+// @version      1.0.2
+// @description  包子漫畫內透過鍵盤控制翻頁，W: 上滾，S: 下滾，A: 上一頁，D: 下一頁
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=twmanga.com
@@ -27,31 +27,38 @@ let _isSubmit = false;
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    document.addEventListener("keydown", function (e) {
-        if (e.key === "a") {
-            const links = document.querySelectorAll(".next_chapter a");
-            links.forEach((link) => {
-                if (link.textContent.includes("上一")) {
-                    link.click();
-                }
-            });
-        } else if (e.key === "d") {
-            const links = document.querySelectorAll(".next_chapter a");
-            links.forEach((link) => {
-                if (link.textContent.includes("下一")) {
-                    link.click();
-                }
-            });
-        } else if (e.key === "w") {
-            window.scrollBy({
-                top: -window.innerHeight * 0.92,
-                behavior: "smooth",
-            });
-        } else if (e.key === "s") {
-            window.scrollBy({
-                top: window.innerHeight * 0.92,
-                behavior: "smooth",
-            });
+    const handleKeydown = (e) => {
+        const links = document.querySelectorAll(".next_chapter a");
+        console.log(e.key)
+        switch (e.key) {
+            case "w":
+                window.scrollBy({
+                    top: -window.innerHeight * 0.92,
+                    behavior: "smooth",
+                });
+                break;
+            case "s":
+                window.scrollBy({
+                    top: window.innerHeight * 0.92,
+                    behavior: "smooth",
+                });
+                break;
+            case "a":
+                links.forEach((link) => {
+                    if (link.textContent.includes("上一")) {
+                        link.click();
+                    }
+                });
+                break;
+            case "d":
+                links.forEach((link) => {
+                    if (link.textContent.includes("下一")) {
+                        link.click();
+                    }
+                });
+                break;
         }
-    });
+    };
+
+    document.addEventListener("keydown", handleKeydown);
 })();
