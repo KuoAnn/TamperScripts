@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Capital Login
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  try to take over the world!
 // @author       KuoAnn
 // @match        https://tradeweb.capital.com.tw/
@@ -33,55 +33,56 @@ let _isSubmit = false;
         return;
     }
 
-    const observer = new MutationObserver((mo) => {
-        mo.forEach((mutation) => {
-            if (mutation.type === "childList") {
-                console.log("Mutated");
-
-                const accountInput = document.querySelector("#account");
-                if (accountInput) {
-                    accountInput.value = ACCOUNT;
-                }
-
-                const passwordInput = document.querySelector("#pass");
-                if (passwordInput) {
-                    passwordInput.value = PASSWORD;
-                }
-
-                const loginBtn = document.querySelector(".login-btn");
-                if (!_isLoaded && loginBtn) {
-                    _isLoaded = true;
-                    loginBtn.click();
-                }
-
-                const captchaImage = document.querySelector(CAPTCHA_IMAGE_SELECTOR);
-                if (!_isSubmit && captchaImage) {
-                    _isSubmit = true;
-
-                    if (captchaImage) {
-                        _captchaBase64 = getCaptchaImage(captchaImage);
-                        if (_captchaBase64) {
-                            setCaptchaAndSubmit(_captchaBase64, "#Captcha");
-                        }
-                    }
-                }
-            }
-        });
-    });
+    const observer = new MutationObserver(handleMutations);
     observer.observe(document.body, { childList: true, subtree: true });
 
-    function getCaptchaImage() {
-        const element = document.querySelector(CAPTCHA_IMAGE_SELECTOR);
-        if (element) {
-            const canvas = document.createElement("canvas");
-            const context = canvas.getContext("2d");
-            canvas.height = element.naturalHeight;
-            canvas.width = element.naturalWidth;
-            context.drawImage(element, 0, 0);
-            const img_data = canvas.toDataURL();
-            return img_data ? img_data.split(",")[1] : "";
+    function handleMutations(mutations) {
+        mutations.forEach((mutation) => {
+            if (mutation.type === "childList") {
+                console.log("Mutated");
+                handleLogin();
+                handleCaptcha();
+            }
+        });
+    }
+
+    function handleLogin() {
+        const accountInput = document.querySelector("#account");
+        if (accountInput) {
+            accountInput.value = ACCOUNT;
         }
-        return "";
+
+        const passwordInput = document.querySelector("#pass");
+        if (passwordInput) {
+            passwordInput.value = PASSWORD;
+        }
+
+        const loginBtn = document.querySelector(".login-btn");
+        if (!_isLoaded && loginBtn) {
+            _isLoaded = true;
+            loginBtn.click();
+        }
+    }
+
+    function handleCaptcha() {
+        const captchaImage = document.querySelector(CAPTCHA_IMAGE_SELECTOR);
+        if (!_isSubmit && captchaImage) {
+            _isSubmit = true;
+            _captchaBase64 = getCaptchaImage(captchaImage);
+            if (_captchaBase64) {
+                setCaptchaAndSubmit(_captchaBase64, "#Captcha");
+            }
+        }
+    }
+
+    function getCaptchaImage(element) {
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        canvas.height = element.naturalHeight;
+        canvas.width = element.naturalWidth;
+        context.drawImage(element, 0, 0);
+        const img_data = canvas.toDataURL();
+        return img_data ? img_data.split(",")[1] : "";
     }
 
     function setCaptchaAndSubmit(image_data) {
@@ -96,7 +97,6 @@ let _isSubmit = false;
                 console.log(r.responseText);
                 if (r.status == 200) {
                     let answer = JSON.parse(r.responseText).answer;
-                    // auto guess
                     answer = answer.replace(/[gq]/g, "9");
                     if (answer && answer.match(/^\d{4}$/)) {
                         const captchaInput = document.querySelector(CAPTCHA_INPUT_SELECTOR);
@@ -127,7 +127,7 @@ let _isSubmit = false;
             imgCaptcha.click();
 
             const interval = setInterval(() => {
-                const image_data = getCaptchaImage();
+                const image_data = getCaptchaImage(document.querySelector(CAPTCHA_IMAGE_SELECTOR));
                 if (image_data !== "" && _captchaBase64 && image_data !== _captchaBase64) {
                     clearInterval(interval);
                     setCaptchaAndSubmit(image_data);
