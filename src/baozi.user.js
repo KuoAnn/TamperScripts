@@ -124,8 +124,8 @@ const alert = (function () {
         let chapters = eleChapters.querySelectorAll(":scope > div");
         chapters = Array.from(chapters).sort((a, b) => {
             try {
-                const numA = parseFloat(a.textContent.match(/第(\d+)話/)[1]);
-                const numB = parseFloat(b.textContent.match(/第(\d+)話/)[1]);
+                const numA = parseFloat(a.textContent.match(/(\d+(\.\d+)?)/)[0]);
+                const numB = parseFloat(b.textContent.match(/(\d+(\.\d+)?)/)[0]);
                 return numB - numA;
             } catch (error) {
                 const errMsg = `Sort Error: ${error} ${a.textContent}|${b.textContent}`;
