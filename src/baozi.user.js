@@ -63,8 +63,6 @@ const alert = (str, timeout) => {
         if (!reads.some((ele) => ele.ss === value.ss && ele.cs === value.cs)) {
             reads.push(value);
             GM_setValue(key, JSON.stringify(reads));
-        } else {
-            GM_setValue(key, JSON.stringify([value]));
         }
         console.log("Final LastRead:", GM_getValue(key));
     }
@@ -155,7 +153,9 @@ const alert = (str, timeout) => {
             rmEles(".addthis-box");
             document.querySelectorAll("button").forEach((btn) => btn.textContent.includes("查看全部") && btn.click());
             document.querySelectorAll(".section-title").forEach((sectionTitle) => {
-                if (sectionTitle.textContent.includes("章節目錄")) {
+                if (sectionTitle.textContent.indexOf("最新章節") > -1) {
+                    sortCapters(sectionTitle.nextElementSibling);
+                } else if (sectionTitle.textContent.includes("章節目錄")) {
                     const chapterItems = document.querySelector("#chapter-items");
                     const chaptersOther = document.querySelector("#chapters_other_list");
                     chaptersOther && chaptersOther.querySelectorAll(":scope > div").forEach((chapter) => chapterItems.appendChild(chapter));
