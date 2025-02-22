@@ -12,10 +12,13 @@
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_deleteValue
 // ==/UserScript==
 
 GM_addStyle(".alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}");
 GM_addStyle(".alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}");
+GM_addStyle("#__nuxt{padding:0}");
+GM_addStyle(".clearReadBtn{margin-left:6px;max-height:42px;}");
 
 let _isLoaded = false;
 let loader;
@@ -74,14 +77,14 @@ const alert = (function () {
             if (match) {
                 const key = match[1];
                 const value = {
-                    section_slot: match[2],
-                    chapter_slot: match[3],
+                    ss: match[2],
+                    cs: match[3],
                 };
                 console.log("saveLastRead: ", key, value);
                 const lastRead = GM_getValue(key);
                 if (lastRead) {
                     const lastReadArr = Array.from(JSON.parse(lastRead));
-                    const isExist = lastReadArr.some((ele) => ele.section_slot === value.section_slot && ele.chapter_slot === value.chapter_slot);
+                    const isExist = lastReadArr.some((ele) => ele.ss === value.ss && ele.cs === value.cs);
                     if (!isExist) {
                         lastReadArr.push(value);
                         GM_setValue(key, JSON.stringify(lastReadArr));
@@ -111,7 +114,7 @@ const alert = (function () {
                 const values = JSON.parse(lastRead);
                 Array.from(values).forEach((value) => {
                     const lastReadEleA = document.querySelectorAll(
-                        `a[href$="section_slot=${value.section_slot}&chapter_slot=${value.chapter_slot}"]`
+                        `a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`
                     );
                     if (lastReadEleA) {
                         lastReadEleA.forEach((ele) => {
@@ -119,6 +122,21 @@ const alert = (function () {
                         });
                     }
                 });
+
+                // add clear GM_deleteValue button
+                const clearReadBtn = document.createElement("button");
+                clearReadBtn.textContent = "清除已讀";
+                clearReadBtn.className = "clearReadBtn";
+                clearReadBtn.onclick = () => {
+                    GM_deleteValue(key);
+                    alert("已清除紀錄");
+                    window.location.reload();
+                };
+                // append clearBtn next to .add_bookshelf
+                const addBookshelf = document.querySelector(".add_bookshelf");
+                if (addBookshelf) {
+                    addBookshelf.parentNode.appendChild(clearReadBtn);
+                }
             }
         } catch (error) {
             console.error(`showLastRead Error: ${error}\n${url}`);
@@ -169,8 +187,10 @@ const alert = (function () {
             clearInterval(loader);
             console.log("Loaded");
             // remove useless elements
-            rmEle(".l-content", "猜你喜歡");
-            rmEle(".footer");
+            rmEles(".l-content", "猜你喜歡");
+            rmEles(".footer");
+            rmEles(".recommend");
+            rmEles(".addthis-box");
             // click button which text contains "查看全部"
             const viewAllBtns = document.querySelectorAll("button");
             viewAllBtns.forEach((btn) => {
@@ -201,7 +221,7 @@ const alert = (function () {
         }
     }
 
-    function rmEle(selector, text) {
+    function rmEles(selector, text) {
         const eles = document.querySelectorAll(selector);
         try {
             if (eles) {
