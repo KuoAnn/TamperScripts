@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  包子漫畫內透過鍵盤控制翻頁，W: 上滾，S: 下滾，A: 上一頁，D: 下一頁
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -32,7 +32,7 @@ const alert = (function () {
         alertContainer.appendChild(message);
         messages.push(message);
 
-        if (messages.length > 20) {
+        if (messages.length > 3) {
             var oldMessage = messages.shift();
             if (alertContainer.contains(oldMessage)) {
                 alertContainer.removeChild(oldMessage);
@@ -43,7 +43,7 @@ const alert = (function () {
             if (alertContainer.contains(message)) {
                 alertContainer.removeChild(message);
             }
-        }, 3333);
+        }, 3000);
     };
 })();
 
@@ -97,6 +97,16 @@ const alert = (function () {
             _isLoaded = true;
             clearInterval(loader);
             console.log("Loaded");
+            // remove useless elements
+            rmEle(".l-content", "猜你喜歡");
+            rmEle(".footer");
+            // click button which text contains "查看全部"
+            const viewAllBtns = document.querySelectorAll("button");
+            viewAllBtns.forEach((btn) => {
+                if (btn.textContent.indexOf("查看全部") > -1) {
+                    btn.click();
+                }
+            });
 
             sectionTitles.forEach((sectionTitle) => {
                 if (sectionTitle.textContent.indexOf("最新章節") > -1) {
@@ -120,6 +130,25 @@ const alert = (function () {
         }
     }
 
+    function rmEle(selector, text) {
+        const eles = document.querySelectorAll(selector);
+        try {
+            if (eles) {
+                eles.forEach((ele) => {
+                    if (text) {
+                        if (ele.textContent.indexOf(text) > -1) {
+                            ele.remove();
+                        }
+                    } else {
+                        ele.remove();
+                    }
+                });
+            }
+        } catch (error) {
+            console.error(`Remove Error: ${error}`);
+        }
+    }
+
     function sortCapters(eleChapters) {
         let chapters = eleChapters.querySelectorAll(":scope > div");
         chapters = Array.from(chapters).sort((a, b) => {
@@ -128,9 +157,9 @@ const alert = (function () {
                 const numB = parseFloat(b.textContent.match(/(\d+(\.\d+)?)/)[0]);
                 return numB - numA;
             } catch (error) {
-                const errMsg = `Sort Error: ${error} ${a.textContent}|${b.textContent}`;
-                alert(errMsg);
-                console.error(errMsg);
+                // const errMsg = `Sort Error: ${error} ${a.textContent}|${b.textContent}`;
+                // alert(errMsg);
+                // console.error(errMsg);
                 // 預設反序
                 return a > b ? 1 : -1;
             }
