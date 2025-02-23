@@ -9,10 +9,10 @@
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=twmanga.com
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
-// @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @grant        GM_addStyle
 // @grant        GM_addElement
 // ==/UserScript==
 
@@ -22,20 +22,20 @@ GM_addStyle(`
   #__nuxt{padding:0}
   .clearReadBtn{margin-left:6px;max-height:42px;}
 `);
+const alertMQ = [];
+const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
+const alert = (str, timeout) => {
+    const msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: str });
+    alertMQ.push(msg);
+    if (alertMQ.length > 10) {
+        const old = alertMQ.shift();
+        alertDiv.contains(old) && alertDiv.removeChild(old);
+    }
+    setTimeout(() => alertDiv.contains(msg) && alertDiv.removeChild(msg), timeout > 0 ? timeout : 3000);
+};
 
-const messages = [];
 let loader,
     _isLoaded = false;
-const alertContainer = GM_addElement(document.body, "div", { class: "alertContainer" });
-const alert = (str, timeout) => {
-    const message = GM_addElement(alertContainer, "div", { class: "alertMessage", textContent: str });
-    messages.push(message);
-    if (messages.length > 10) {
-        const old = messages.shift();
-        alertContainer.contains(old) && alertContainer.removeChild(old);
-    }
-    setTimeout(() => alertContainer.contains(message) && alertContainer.removeChild(message), timeout > 0 ? timeout : 3000);
-};
 
 (function () {
     "use strict";

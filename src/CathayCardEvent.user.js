@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cathay card event register
 // @namespace    https://www.cathaybk.com.tw/promotion/CreditCard/Event
-// @version      1.0.5
+// @version      1.0.6
 // @description  try to take over the world!
 // @author       KuoAnn
 // @match        https://www.cathaybk.com.tw/promotion*
@@ -10,7 +10,25 @@
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
 // @grant        GM_xmlhttpRequest
+// @grant        GM_addStyle
+// @grant        GM_addElement
 // ==/UserScript==
+
+GM_addStyle(`
+  .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
+  .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
+`);
+const alertMQ = [];
+const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
+const alert = (str, timeout) => {
+    const msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: str });
+    alertMQ.push(msg);
+    if (alertMQ.length > 10) {
+        const old = alertMQ.shift();
+        alertDiv.contains(old) && alertDiv.removeChild(old);
+    }
+    setTimeout(() => alertDiv.contains(msg) && alertDiv.removeChild(msg), timeout > 0 ? timeout : 3000);
+};
 
 // 個人參數
 const USER_ID_KEY = "userId";
@@ -39,47 +57,6 @@ let _isLoaded = false;
         }
         return value;
     };
-
-    const alert = (function () {
-        var alertContainer = document.createElement("div");
-        alertContainer.style.position = "fixed";
-        alertContainer.style.top = "6px";
-        alertContainer.style.left = "6px";
-        alertContainer.style.zIndex = "9999";
-        alertContainer.style.pointerEvents = "none";
-        document.body.appendChild(alertContainer);
-
-        var messages = [];
-
-        return function (str) {
-            var message = document.createElement("div");
-            message.style.background = "rgba(94, 39, 0, 0.7)";
-            message.style.color = "white";
-            message.style.padding = "4px";
-            message.style.margin = "2px";
-            message.style.borderRadius = "5px";
-            message.style.pointerEvents = "auto";
-            message.style.fontSize = "14px";
-            message.innerText = str;
-
-            alertContainer.appendChild(message);
-            let currentTime = new Date().toLocaleTimeString("en-GB", { hour12: false });
-            messages.push(`${currentTime} ${message}`);
-
-            if (messages.length > 20) {
-                var oldMessage = messages.shift();
-                if (alertContainer.contains(oldMessage)) {
-                    alertContainer.removeChild(oldMessage);
-                }
-            }
-
-            setTimeout(function () {
-                if (alertContainer.contains(message)) {
-                    alertContainer.removeChild(message);
-                }
-            }, 5000);
-        };
-    })();
 
     const USER_ID = getUserData(USER_ID_KEY, "身分證字號:");
     const USER_BIRTH = getUserData(USER_BIRTH_KEY, "生日 (YYYYMMDD):");
