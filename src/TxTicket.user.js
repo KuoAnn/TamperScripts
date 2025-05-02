@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TxTicket
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數
 // @author       KuoAnn
 // @match        https://tixcraft.com/*
@@ -61,6 +61,9 @@ if (triggerUrl.includes("activity/detail/")) {
 
                 // 自動模式提示
                 SetConsole();
+
+                // 預啟動 OCR 服務
+                Preheat_ocr();
 
                 const ad = document.getElementById("ad-footer");
                 if (ad) {
@@ -352,6 +355,31 @@ if (triggerUrl.includes("activity/detail/")) {
             return false;
         }
 
+        function Preheat_ocr() {
+            // 檢查前次發動時間
+            const lastTime = localStorage.getItem("triggerOcrTime");
+            const now = Date.now();
+            if (lastTime && now - parseInt(lastTime, 10) < 10 * 60 * 1000) {
+                console.log("Preheat_ocr...skip");
+                return;
+            }
+            localStorage.setItem("triggerOcrTime", now.toString());
+
+            // captcha=piqi
+            const image_data =
+                "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";
+
+            try {
+                _isGetCaptcha = false;
+                getCaptcha("http://maxbot.dropboxlike.com:16888/ocr", image_data);
+                getCaptcha("https://asia-east1-futureminer.cloudfunctions.net/ocr", image_data);
+
+                console.log("Preheat_ocr");
+            } catch (error) {
+                console.error("Error:", error);
+            }
+        }
+
         function get_ocr_image() {
             const img = document.querySelector("#TicketForm_verifyCode-image");
             if (img) {
@@ -370,6 +398,7 @@ if (triggerUrl.includes("activity/detail/")) {
             const image_data = get_ocr_image();
             if (image_data) {
                 try {
+                    _isGetCaptcha = false;
                     getCaptcha("http://maxbot.dropboxlike.com:16888/ocr", image_data);
                     getCaptcha("https://asia-east1-futureminer.cloudfunctions.net/ocr", image_data);
                 } catch (error) {
@@ -393,8 +422,8 @@ if (triggerUrl.includes("activity/detail/")) {
                         const answer = JSON.parse(r.responseText).answer;
                         if (answer.length == 4) {
                             if (!_isGetCaptcha) {
-                                console.log(url + " return " + answer);
                                 _isGetCaptcha = true;
+                                console.log(url + " return " + answer);
                                 const verifyCodeInput = document.getElementById("TicketForm_verifyCode");
                                 if (verifyCodeInput) {
                                     verifyCodeInput.value = answer;
