@@ -2,7 +2,7 @@
 // @name         國泰自我學習網
 // @namespace    http://tampermonkey.net/
 // @source       https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Cathay-Learn.user.js
-// @version      1.0.5
+// @version      1.0.6
 // @description  國泰自我學習網
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
@@ -19,24 +19,25 @@ GM_addStyle(`
 `);
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
-const alert = (str, type = "", timeout = 3333) => {
-    let msg;
+const alert = (text, type = "", timeout = 3333) => {
+    let $msg;
     if (type === "error") {
-        msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:red", textContent: str });
+        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:red", textContent: text });
     } else {
-        msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: str });
+        console.log(text);
+        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: text });
     }
-    alertMQ.push(msg);
+    alertMQ.push($msg);
     if (alertMQ.length > 10) {
         const old = alertMQ.shift();
         alertDiv.contains(old) && alertDiv.removeChild(old);
     }
-    setTimeout(() => alertDiv.contains(msg) && alertDiv.removeChild(msg), timeout);
+    setTimeout(() => alertDiv.contains($msg) && alertDiv.removeChild($msg), timeout);
 };
 
 (function () {
     const TIMEOUT_SECOND = 300;
-    const LOAD_TIME_SECOND = 15;
+    const LOAD_TIME_SECOND = 20;
     ("use strict");
 
     // 初始化狀態變數
@@ -83,23 +84,16 @@ const alert = (str, type = "", timeout = 3333) => {
             waitToNextPage();
         } else {
             loadTime--;
-            alert(`等待載入 ${loadTime} seconds`);
+            alert(`等待載入 ${loadTime} 秒`);
         }
     }, 1000);
 
     function createCountdownRow() {
-        const r = document.createElement("div");
-        setStyles(r, {
-            textAlign: "center",
-            position: "fixed",
-            width: "100%",
-            top: "0",
-            color: "#eee",
-            backgroundColor: "red",
+        const r = GM_addElement(document.body, "div", {
+            style: "text-align:center; position:fixed; width:100%; top:0; color:#eee; background-color:red;"
         });
-        r.appendChild(document.createElement("span"));
+        GM_addElement(r, "span");
         r.appendChild(createCancelButton());
-        body.prepend(r);
         return r;
     }
 
@@ -111,7 +105,7 @@ const alert = (str, type = "", timeout = 3333) => {
             cursor: "pointer",
             textDecoration: "underline",
         });
-        button.innerText = "取消載入";
+        button.innerText = "取消";
         button.onclick = () => {
             clearInterval(onloadInterval);
             if (countdownInterval) clearInterval(countdownInterval);
@@ -128,11 +122,11 @@ const alert = (str, type = "", timeout = 3333) => {
         const duration = video.duration;
         countdownSec = Math.round(duration) + 5; // 多等待 5 秒
         totalSec = countdownSec;
-        alert(`Detect video countdown=${countdownSec}s, totalSec=${totalSec}s`);
+        alert(`偵測到影片長度 ${countdownSec} 秒`);
         video.click();
         video.play();
         video.muted = !video.muted;
-        alert("Auto play");
+        alert("開始讀秒");
     }
 
     function setStyles(element, styles) {
@@ -141,7 +135,7 @@ const alert = (str, type = "", timeout = 3333) => {
 
     function waitToNextPage() {
         const endDate = new Date(Date.now() + countdownSec * 1000);
-        alert("Countdown to:", endDate);
+        alert(`換頁時間：${endDate.toLocaleString()}`);
 
         countdownInterval = setInterval(() => {
             countdownSec = Math.round((endDate - Date.now()) / 1000);
@@ -164,16 +158,10 @@ const alert = (str, type = "", timeout = 3333) => {
     }
 
     function createAutoAnswerButton() {
-        const submitAllButton = document.createElement("button");
-        submitAllButton.textContent = "✅ 看答案";
-        Object.assign(submitAllButton.style, {
-            position: "fixed",
-            top: "10px",
-            right: "20px",
-            zIndex: "1000",
-            padding: "8px 16px",
+        const submitAllButton = GM_addElement(document.body, "button", {
+            textContent: "✅ 看答案",
+            style: "position:fixed; top:10px; right:20px; z-index:1000; padding:8px 16px;"
         });
-        document.body.prepend(submitAllButton);
 
         submitAllButton.addEventListener("click", function () {
             tryClickButton("完成", () => tryClickButton("確認", () => tryClickButton("全部", () => alert("請手動點擊「再測驗一次」按鈕"))));
