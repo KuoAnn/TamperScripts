@@ -162,9 +162,8 @@
             }
             
             const step3 = () => {
-                // tryClickButton("再測驗一次");
                 console.log("step3");
-                alert("請手動點擊「再測驗一次」按鈕");
+                console.log("請手動點擊「再測驗一次」按鈕");
             };
             const step2 = () => {
                 console.log("step2");
@@ -178,44 +177,41 @@
         })();
     }
     function tryGetElements(selector) {
-        let parent = document;
         try {
-            const contentFrame = document.querySelector("iframe#content");
-            const contentDocument = contentFrame.contentDocument || contentFrame.contentWindow.document;
-            if (contentDocument) {
-                parent = contentDocument;
-                const playContentFrame = contentDocument.querySelector("iframe#playContent");
-                if (playContentFrame) {
-                    parent = playContentFrame;
-                    const iframeDocument = playContentFrame.contentDocument || playContentFrame.contentWindow.document;
-                    if (iframeDocument) {
-                        parent = iframeDocument;
-                        const iframeDocumentContent = iframeDocument.querySelector("iframe#Content");
-                        if (iframeDocumentContent) {
-                            parent = iframeDocumentContent;
-                            const iframeDocumentContentDoc = iframeDocumentContent.contentDocument || iframeDocumentContent.contentWindow.document;
-                            if (iframeDocumentContentDoc) {
-                                parent = iframeDocumentContentDoc;
-                            } else {
-                                console.log("無法存取內層 iframe 的 document 物件");
-                            }
-                        }
-                    } else {
-                        console.log("無法存取內層 iframe 的 document 物件");
+            // 使用遞迴方式查找最深層的 document
+            const getDeepestDocument = (doc, iframeSelectors = ['iframe#content', 'iframe#playContent', 'iframe#Content']) => {
+                if (!doc || iframeSelectors.length === 0) return doc;
+                
+                try {
+                    const iframeSelector = iframeSelectors[0];
+                    const iframe = doc.querySelector(iframeSelector);
+                    
+                    if (!iframe) {
+                        console.log(`找不到 ${iframeSelector}`);
+                        return doc;
                     }
-                } else {
-                    console.log('在外層 iframe 中找不到 id 為 "playContent" 的 iframe');
+                    
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                    if (!iframeDoc) {
+                        console.log(`無法存取 ${iframeSelector} 的 document 物件`);
+                        return doc;
+                    }
+                    
+                    return getDeepestDocument(iframeDoc, iframeSelectors.slice(1));
+                } catch (err) {
+                    console.error(`存取 iframe 時發生錯誤: ${err.message}`);
+                    return doc;
                 }
-            } else {
-                console.log("無法存取外層 iframe 的 document 物件");
-            }
+            };
+            
+            // 獲取最深層的 document
+            const deepestDoc = getDeepestDocument(document);
+            
+            // 在最深層的 document 中查詢元素
+            const elements = deepestDoc.querySelectorAll(selector);
+            return elements?.length > 0 ? elements : null;
         } catch (error) {
-            console.error("tryGetElement error:", error);
-        }
-        const elements = parent.querySelectorAll(selector);
-        if (elements && elements.length > 0) {
-            return elements;
-        } else {
+            console.error(`tryGetElements error: ${error.message}`);
             return null;
         }
     }
