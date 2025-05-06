@@ -7,56 +7,89 @@
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
 // @connect      *
-// @grant        none
+// @grant        GM_addStyle
+// @grant        GM_addElement
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayLearn.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayLearn.user.js
 // @icon         https://www.cathaysec.com.tw/cathaysec/assets/img/home/news_icon_csc.png
 // ==/UserScript==
+GM_addStyle(`
+  .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
+  .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
+`);
+const alertMQ = [];
+const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
+const alert = (str, type = "", timeout = 3333) => {
+    let msg;
+    if (type === "error") {
+        msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:red", textContent: str });
+    } else {
+        msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: str });
+    }
+    alertMQ.push(msg);
+    if (alertMQ.length > 10) {
+        const old = alertMQ.shift();
+        alertDiv.contains(old) && alertDiv.removeChild(old);
+    }
+    setTimeout(() => alertDiv.contains(msg) && alertDiv.removeChild(msg), timeout);
+};
+
 (function () {
     const TIMEOUT_SECOND = 300;
     const LOAD_TIME_SECOND = 15;
     ("use strict");
+
+    // 初始化狀態變數
     let countdownInterval;
     let countdownSec = 0;
     let totalSec = 0;
     let loadTime = LOAD_TIME_SECOND;
+
+    // 建立倒數計時UI
     const body = document.querySelector("body");
     const countdownRow = createCountdownRow();
-    body.prepend(countdownRow);
-    const countdownText = document.createElement("span");
-    countdownText.innerText = "";
-    countdownRow.appendChild(countdownText);
-    const cancelBtn = createCancelButton();
-    countdownRow.appendChild(cancelBtn);
+    const countdownText = countdownRow.querySelector("span");
+
+    // 主要監控間隔
     const onloadInterval = setInterval(() => {
         try {
-            const video = tryGetElements("video");
-            if (video && video.length > 0) {
-                initVideo(video[0]);
-            }
-            tryClickButton("測驗開始", () => {
-                console.log("測驗開始");
+            // 檢查影片元素
+            const videos = tryGetElements("video");
+            const button = tryGetButtonByText("測驗開始");
+            if (videos?.length > 0) {
+                initVideo(videos[0]);
+            } else if (button) {
                 clearInterval(onloadInterval);
-                hideCancelButton();
+                alert("測驗開始");
+                button.click();
+                hideCountdownRow();
                 createAutoAnswerButton();
-            });
+                return;
+            }
         } catch (error) {
-            console.error("onLoadInterval error:", error);
+            alert(error.message, "error");
+            console.error("[onLoadInterval] error:", error);
         }
+
+        // 檢查是否開始倒數或等待影片載入
         if (countdownSec > 0) {
-            AutoLearn();
+            clearInterval(onloadInterval);
+            waitToNextPage();
         } else if (loadTime <= 0) {
+            clearInterval(onloadInterval);
+            alert(`載入超過等待時間，使用預設等待時間 ${TIMEOUT_SECOND} 秒`);
             countdownSec = TIMEOUT_SECOND;
             totalSec = countdownSec;
-            AutoLearn();
+            waitToNextPage();
         } else {
             loadTime--;
-            console.log(`Wait video loading for ${loadTime} seconds`);
+            alert(`等待載入 ${loadTime} seconds`);
         }
     }, 1000);
+
     function createCountdownRow() {
-        const row = document.createElement("div");
-        setStyles(row, {
+        const r = document.createElement("div");
+        setStyles(r, {
             textAlign: "center",
             position: "fixed",
             width: "100%",
@@ -64,8 +97,12 @@
             color: "#eee",
             backgroundColor: "red",
         });
-        return row;
+        r.appendChild(document.createElement("span"));
+        r.appendChild(createCancelButton());
+        body.prepend(r);
+        return r;
     }
+
     function createCancelButton() {
         const button = document.createElement("a");
         setStyles(button, {
@@ -74,62 +111,58 @@
             cursor: "pointer",
             textDecoration: "underline",
         });
-        button.innerText = "取消";
+        button.innerText = "取消載入";
         button.onclick = () => {
             clearInterval(onloadInterval);
             if (countdownInterval) clearInterval(countdownInterval);
-            hideCancelButton();
+            hideCountdownRow();
         };
         return button;
     }
-    function hideCancelButton() {
+
+    function hideCountdownRow() {
         countdownRow.remove();
     }
+
     function initVideo(video) {
         const duration = video.duration;
-        countdownSec = Math.round(duration) + 10; // 多等待 10 秒
+        countdownSec = Math.round(duration) + 5; // 多等待 5 秒
         totalSec = countdownSec;
-        console.log(`Detect video countdown=${countdownSec}s, totalSec=${totalSec}s`);
+        alert(`Detect video countdown=${countdownSec}s, totalSec=${totalSec}s`);
         video.click();
         video.play();
         video.muted = !video.muted;
-        console.log("Auto play");
+        alert("Auto play");
     }
+
     function setStyles(element, styles) {
-        for (const property in styles) {
-            element.style[property] = styles[property];
-        }
+        Object.assign(element.style, styles);
     }
-    function AutoLearn() {
-        clearInterval(onloadInterval);
-        // moveToBottomRight();
-        const endDate = new Date();
-        endDate.setSeconds(endDate.getSeconds() + countdownSec);
-        console.log("Countdown to:", endDate);
+
+    function waitToNextPage() {
+        const endDate = new Date(Date.now() + countdownSec * 1000);
+        alert("Countdown to:", endDate);
+
         countdownInterval = setInterval(() => {
-            countdownSec = Math.round((endDate - new Date()) / 1000);
+            countdownSec = Math.round((endDate - Date.now()) / 1000);
+
             if (countdownSec > 0) {
                 countdownText.innerText = `${--countdownSec}/${totalSec}`;
             } else {
+                clearInterval(countdownInterval);
                 goToNextPage();
             }
         }, 1000);
     }
-    function moveToBottomRight() {
-        window.resizeTo(400, 400);
-        const rightX = screen.width - window.outerWidth;
-        const bottomY = screen.height - window.outerHeight;
-        window.moveTo(rightX, bottomY);
-    }
+
     function goToNextPage() {
         const iframeBanner = document.querySelector("iframe#banner");
-        if (iframeBanner) {
+        if (iframeBanner?.contentWindow?.document) {
             const buttons = iframeBanner.contentWindow.document.querySelectorAll("button");
-            if (buttons.length > 0) {
-                buttons[buttons.length - 1].click();
-            }
+            if (buttons.length > 0) buttons[buttons.length - 1].click();
         }
     }
+
     function createAutoAnswerButton() {
         const submitAllButton = document.createElement("button");
         submitAllButton.textContent = "✅ 看答案";
@@ -141,116 +174,76 @@
             padding: "8px 16px",
         });
         document.body.prepend(submitAllButton);
+
         submitAllButton.addEventListener("click", function () {
-            const radioGroups = tryGetElements("mat-radio-group");
-            if (radioGroups) {
-                radioGroups.forEach((group) => {
-                    const firstRadio = group.querySelector('mat-radio-button:first-child input[type="radio"]');
-                    if (firstRadio) {
-                        firstRadio.click();
-                    }
-                });
-            }
-            const checkboxes = tryGetElements("mat-checkbox");
-            if (checkboxes) {
-                checkboxes.forEach((checkbox) => {
-                    const firstCheckbox = checkbox.querySelector('input[type="checkbox"]');
-                    if (firstCheckbox && !firstCheckbox.checked) {
-                        firstCheckbox.click();
-                    }
-                });
-            }
-            
-            const step3 = () => {
-                console.log("step3");
-                console.log("請手動點擊「再測驗一次」按鈕");
-            };
-            const step2 = () => {
-                console.log("step2");
-                tryClickButton("全部", step3);
-            };
-            const step1 = () => {
-                console.log("step1");
-                tryClickButton("確認", step2);
-            };
-            tryClickButton("完成", step1);
-        })();
+            tryClickButton("完成", () => tryClickButton("確認", () => tryClickButton("全部", () => alert("請手動點擊「再測驗一次」按鈕"))));
+        });
     }
+
     function tryGetElements(selector) {
         try {
-            // 使用遞迴方式查找最深層的 document
-            const getDeepestDocument = (doc, iframeSelectors = ['iframe#content', 'iframe#playContent', 'iframe#Content']) => {
+            const getDeepestDocument = (doc, iframeSelectors = ["iframe#content", "iframe#playContent", "iframe#Content"]) => {
                 if (!doc || iframeSelectors.length === 0) return doc;
-                
-                try {
-                    const iframeSelector = iframeSelectors[0];
-                    const iframe = doc.querySelector(iframeSelector);
-                    
-                    if (!iframe) {
-                        console.log(`找不到 ${iframeSelector}`);
-                        return doc;
-                    }
-                    
-                    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-                    if (!iframeDoc) {
-                        console.log(`無法存取 ${iframeSelector} 的 document 物件`);
-                        return doc;
-                    }
-                    
-                    return getDeepestDocument(iframeDoc, iframeSelectors.slice(1));
-                } catch (err) {
-                    console.error(`存取 iframe 時發生錯誤: ${err.message}`);
+
+                const iframeSelector = iframeSelectors[0];
+                const iframe = doc.querySelector(iframeSelector);
+
+                if (!iframe) {
                     return doc;
                 }
+
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                if (!iframeDoc) {
+                    return doc;
+                }
+
+                return getDeepestDocument(iframeDoc, iframeSelectors.slice(1));
             };
-            
-            // 獲取最深層的 document
+
             const deepestDoc = getDeepestDocument(document);
-            
-            // 在最深層的 document 中查詢元素
             const elements = deepestDoc.querySelectorAll(selector);
             return elements?.length > 0 ? elements : null;
         } catch (error) {
-            console.error(`tryGetElements error: ${error.message}`);
+            alert(`[tryGetElements] error: ${error.message}`, "error");
+            console.error(`[tryGetElements] error:`, error);
             return null;
         }
     }
+
     function tryGetButtonByText(text) {
         const buttons = tryGetElements("button");
-        if (buttons && buttons.length > 0) {
-            for (let i = 0; i < buttons.length; i++) {
-                if (buttons[i].innerText.includes(text)) {
-                    return buttons[i];
-                }
-            }
-        }
-        return null;
+        if (!buttons || buttons.length === 0) return null;
+
+        return Array.from(buttons).find((btn) => btn.innerText.includes(text)) || null;
     }
+
     function tryClickButton(buttonText, nextFunc, retryCount = 10) {
-        const clickButtonWithDelay = (button, delay = 1000) => {
-            console.log(`找到按鈕 "${buttonText}"，將在 ${delay / 1000} 秒後自動點擊`);
+        const clickWithDelay = (btn) => {
+            alert(`找到按鈕 "${buttonText}"，將在 1 秒後自動點擊`);
             setTimeout(() => {
-                button.click();
-                if (typeof nextFunc === "function") {
-                    nextFunc();
-                }
-            }, delay);
+                btn.click();
+                if (typeof nextFunc === "function") nextFunc();
+            }, 1000);
         };
-        const retryFindButton = () => {
-            console.log(`找不到按鈕 "${buttonText}"，將嘗試重新尋找，最多 ${retryCount} 次`);
-            let attempts = 0;
-            const retryInterval = setInterval(() => {
-                const button = tryGetButtonByText(buttonText);
-                if (button) {
-                    clickButtonWithDelay(button);
-                    clearInterval(retryInterval);
-                } else if (++attempts >= retryCount) {
-                    console.log(`已嘗試 ${retryCount} 次仍找不到按鈕 "${buttonText}"，請手動點擊`);
-                    clearInterval(retryInterval);
-                }
-            }, 500);
-        };
+
         const button = tryGetButtonByText(buttonText);
-        button ? clickButtonWithDelay(button) : retryFindButton();
+        if (button) {
+            clickWithDelay(button);
+            return;
+        }
+
+        alert(`找不到按鈕 "${buttonText}"，將嘗試重新尋找，最多 ${retryCount} 次`);
+        let attempts = 0;
+        const retryInterval = setInterval(() => {
+            const foundButton = tryGetButtonByText(buttonText);
+
+            if (foundButton) {
+                clickWithDelay(foundButton);
+                clearInterval(retryInterval);
+            } else if (++attempts >= retryCount) {
+                alert(`已嘗試 ${retryCount} 次仍找不到按鈕 "${buttonText}"，請手動點擊`);
+                clearInterval(retryInterval);
+            }
+        }, 500);
     }
 })();
