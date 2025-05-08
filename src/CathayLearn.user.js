@@ -16,6 +16,14 @@
 GM_addStyle(`
   .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
   .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
+  .cathay-btn{position:fixed;right:20px;z-index:1000;padding:10px 16px;margin-bottom:5px;border-radius:5px;border:none;font-weight:500;cursor:pointer;transition:all 0.3s ease;box-shadow:0 2px 5px rgba(0,0,0,0.2);}
+  .cathay-btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.3);}
+  .cathay-btn-check{top:10px;background-color:#4CAF50;color:white;}
+  .cathay-btn-check:hover{background-color:#45a049;}
+  .cathay-btn-save{top:60px;background-color:#2196F3;color:white;}
+  .cathay-btn-save:hover{background-color:#0b7dda;}
+  .cathay-btn-read{top:110px;background-color:#ff9800;color:white;}
+  .cathay-btn-read:hover{background-color:#e68a00;}
 `);
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
@@ -47,7 +55,6 @@ const alert = (text, type = "", timeout = 3333) => {
     let loadTime = LOAD_TIME_SECOND;
 
     // 建立倒數計時UI
-    const body = document.querySelector("body");
     const countdownRow = createCountdownRow();
     const countdownText = countdownRow.querySelector("span");
 
@@ -84,13 +91,13 @@ const alert = (text, type = "", timeout = 3333) => {
             waitToNextPage();
         } else {
             loadTime--;
-            alert(`等待載入 ${loadTime} 秒`);
+            alert(`頁面載入中...${loadTime} 秒`);
         }
     }, 1000);
 
     function createCountdownRow() {
         const r = GM_addElement(document.body, "div", {
-            style: "text-align:center; position:fixed; width:100%; top:0; color:#eee; background-color:red;"
+            style: "text-align:center; position:fixed; width:100%; top:0; color:#eee; background-color:red;",
         });
         GM_addElement(r, "span");
         r.appendChild(createCancelButton());
@@ -159,13 +166,101 @@ const alert = (text, type = "", timeout = 3333) => {
 
     function createAutoAnswerButton() {
         const submitAllButton = GM_addElement(document.body, "button", {
-            textContent: "✅ 看答案",
-            style: "position:fixed; top:10px; right:20px; z-index:1000; padding:8px 16px;"
+            textContent: "👀 偷看答案",
+            class: "cathay-btn cathay-btn-check",
         });
-
         submitAllButton.addEventListener("click", function () {
             tryClickButton("完成", () => tryClickButton("確認", () => tryClickButton("全部", () => alert("請手動點擊「再測驗一次」按鈕"))));
         });
+
+        const saveButton = GM_addElement(document.body, "button", {
+            textContent: "💾 製作小抄",
+            class: "cathay-btn cathay-btn-save",
+        });
+        saveButton.addEventListener("click", saveAnswers);
+
+        const readButton = GM_addElement(document.body, "button", {
+            textContent: "📖 快樂作弊",
+            class: "cathay-btn cathay-btn-read",
+        });
+        readButton.addEventListener("click", readAnswers);
+    }
+
+    // 儲存答案功能
+    function saveAnswers() {
+        const title = "quiz";
+        const resultContainer = tryGetElements("ctms-feedback-result");
+        if (!resultContainer || resultContainer?.length === 0) {
+            alert("找不到答案頁面，請確認是否已完成測驗");
+            return;
+        }
+        const questionDivs = resultContainer[0].querySelectorAll("div.p-8.mat-pink-50");
+        const data = {};
+        if (questionDivs.length === 0) {
+            alert("找不到答案，請確認【檢視我的答案】頁籤是否已切至【全部】");
+            return;
+        }
+
+        questionDivs.forEach((qDiv, qi) => {
+            const qIndex = qi + 1;
+            const qTextElem = qDiv.querySelector("h3");
+            const qKey = qTextElem ? qTextElem.innerText.trim() : `第${qIndex}題`;
+            const rows = qDiv.querySelectorAll('form [fxlayout="row"]');
+            const ansArr = [];
+            rows.forEach((row) => {
+                if (row.querySelector("mat-icon.fa-check-circle")) {
+                    const ansText = (row.querySelector(".mat-checkbox-label, .mat-radio-label-content")?.textContent || "").trim();
+                    ansArr.push(ansText);
+                }
+            });
+            console.log(`${qKey} > ${ansArr.map((ansText) => `${ansText}`).join(", ")}`);
+            data[qKey] = ansArr;
+        });
+        localStorage.setItem(title, JSON.stringify(data));
+        alert("小抄已就緒");
+    }
+    // 新增讀取並標示答案功能
+    function readAnswers() {
+        const dataStr = localStorage.getItem("quiz");
+        if (!dataStr) {
+            alert("沒有找到小抄");
+            return;
+        }
+        let quizAnswers;
+        try {
+            quizAnswers = JSON.parse(dataStr);
+        } catch (e) {
+            alert("看不懂小抄");
+            return;
+        }
+
+        const resultContainer = tryGetElements("mat-card-content")[0];
+        if (!resultContainer) {
+            alert("找不到題目");
+            return;
+        }
+        const qDivs = resultContainer.querySelectorAll('[id^="question-"]');
+        qDivs.forEach((qDiv) => {
+            const h3 = qDiv.querySelectorAll("h3");
+            if (!h3 || h3?.length != 2) return;
+            const questionText = h3[1].innerText.replace(/^\d+\.\s*/, "").trim();
+            const answers = quizAnswers[questionText];
+            if (!answers) return;
+            answers.forEach((answerText) => {
+                const label = Array.from(qDiv.querySelectorAll("label")).find((l) => l.textContent.trim() === answerText);
+                if (!label) return;
+                const input = qDiv.querySelector(`#${label.getAttribute("for")}`);
+                if (!input) return;
+
+                if (!input.checked) {
+                    label.click();
+                    input.dispatchEvent(new Event("input", { bubbles: true }));
+                    input.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+                label.style.backgroundColor = "yellow";
+            });
+        });
+        alert("已自動作答並標示");
     }
 
     function tryGetElements(selector) {
@@ -226,11 +321,13 @@ const alert = (text, type = "", timeout = 3333) => {
             const foundButton = tryGetButtonByText(buttonText);
 
             if (foundButton) {
+                clearInterval(retryInterval);
                 clickWithDelay(foundButton);
-                clearInterval(retryInterval);
             } else if (++attempts >= retryCount) {
-                alert(`已嘗試 ${retryCount} 次仍找不到按鈕 "${buttonText}"，請手動點擊`);
                 clearInterval(retryInterval);
+                alert(`嘗試 ${retryCount} 次仍找不到按鈕 "${buttonText}"，請手動點擊`);
+            } else {
+                console.log(`嘗試尋找 "${buttonText}" 按鈕... (${attempts}/${retryCount})`);
             }
         }, 500);
     }
