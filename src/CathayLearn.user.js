@@ -216,16 +216,57 @@ const alert = (text, type = "", timeout = 3333) => {
             console.log(`${qKey} > ${ansArr.map((ansText) => `${ansText}`).join(", ")}`);
             data[qKey] = ansArr;
         });
-        localStorage.setItem(title, JSON.stringify(data));
+        
+        // 讀取現有資料，若存在且在一小時內更新過，則合併，否則使用新資料
+        let existingData = {};
+        try {
+            const existingDataStr = localStorage.getItem(title);
+            if (existingDataStr) {
+                const storageData = JSON.parse(existingDataStr);
+                const quizTime = localStorage.getItem("quizTime") ? parseInt(localStorage.getItem("quizTime")) : 0;
+                const currentTime = Date.now();
+                const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
+                
+                // 檢查時間戳記是否在一小時內
+                if (currentTime - quizTime <= oneHourInMs) {
+                    existingData = storageData;
+                } 
+            }
+        } catch (e) {
+            alert("讀取現有資料時發生錯誤，將使用新資料覆蓋", "error");
+        }
+        
+        // 合併新舊資料，以新資料為優先
+        const mergedData = { ...existingData, ...data };
+
+        debugger;
+        
+        // 儲存資料和時間戳記
+        localStorage.setItem(title, JSON.stringify(mergedData));
+        localStorage.setItem("quizTime", Date.now().toString());
+        
         alert("小抄已就緒");
     }
+
     // 新增讀取並標示答案功能
     function readAnswers() {
         const dataStr = localStorage.getItem("quiz");
+        const quizTimeStr = localStorage.getItem("quizTime");
+        
         if (!dataStr) {
             alert("沒有找到小抄");
             return;
         }
+        
+        // 檢查時間是否有效（小於一小時）
+        const quizTime = quizTimeStr ? parseInt(quizTimeStr) : 0;
+        const currentTime = Date.now();
+        const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
+        
+        if (currentTime - quizTime > oneHourInMs) {
+            alert("小抄已過期（超過1小時），但仍將嘗試使用");
+        }
+        
         let quizAnswers;
         try {
             quizAnswers = JSON.parse(dataStr);
