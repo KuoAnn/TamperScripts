@@ -2,7 +2,7 @@
 // @name         國泰自我學習網
 // @namespace    http://tampermonkey.net/
 // @source       https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Cathay-Learn.user.js
-// @version      1.0.7
+// @version      1.0.8
 // @description  國泰自我學習網
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
@@ -233,7 +233,7 @@ const alert = (text, type = "", timeout = 3333) => {
                 } 
             }
         } catch (e) {
-            alert("讀取現有資料時發生錯誤，將使用新資料覆蓋", "error");
+            alert("前份小抄異常", "error");
         }
         
         // 合併新舊資料，以新資料為優先
