@@ -133,7 +133,7 @@ const alert = (text, type = "", timeout = 3333) => {
         video.click();
         video.play();
         video.muted = !video.muted;
-        alert("開始讀秒");
+        alert("開始上課");
     }
 
     function setStyles(element, styles) {
@@ -142,7 +142,7 @@ const alert = (text, type = "", timeout = 3333) => {
 
     function waitToNextPage() {
         const endDate = new Date(Date.now() + countdownSec * 1000);
-        alert(`換頁時間：${endDate.toLocaleString()}`);
+        alert(`下課時間：${endDate.toLocaleString()}`);
 
         countdownInterval = setInterval(() => {
             countdownSec = Math.round((endDate - Date.now()) / 1000);
