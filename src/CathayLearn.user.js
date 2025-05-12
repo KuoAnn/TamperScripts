@@ -14,17 +14,17 @@
 // @icon         https://www.cathaysec.com.tw/cathaysec/assets/img/home/news_icon_csc.png
 // ==/UserScript==
 GM_addStyle(`
-  .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
-  .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
-  .cathay-btn{position:fixed;right:20px;z-index:1000;padding:10px 16px;margin-bottom:5px;border-radius:5px;border:none;font-weight:500;cursor:pointer;transition:all 0.3s ease;box-shadow:0 2px 5px rgba(0,0,0,0.2);}
-  .cathay-btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.3);}
-  .cathay-btn-check{top:10px;background-color:#4CAF50;color:white;}
-  .cathay-btn-check:hover{background-color:#45a049;}
-  .cathay-btn-save{top:60px;background-color:#2196F3;color:white;}
-  .cathay-btn-save:hover{background-color:#0b7dda;}
-  .cathay-btn-read{top:110px;background-color:#ff9800;color:white;}
-  .cathay-btn-read:hover{background-color:#e68a00;}
-`);
+    .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
+    .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
+    .cathay-btn{position:fixed;right:20px;z-index:1000;padding:10px 16px;margin-bottom:5px;border-radius:5px;border:none;font-weight:500;cursor:pointer;transition:all 0.3s ease;box-shadow:0 2px 5px rgba(0,0,0,0.2);}
+    .cathay-btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.3);}
+    .cathay-btn-check{top:10px;background-color:#4CAF50;color:white;}
+    .cathay-btn-check:hover{background-color:#45a049;}
+    .cathay-btn-save{top:60px;background-color:#2196F3;color:white;}
+    .cathay-btn-save:hover{background-color:#0b7dda;}
+    .cathay-btn-read{top:110px;background-color:#ff9800;color:white;}
+    .cathay-btn-read:hover{background-color:#e68a00;}
+  `);
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
 const alert = (text, type = "", timeout = 3333) => {
@@ -127,9 +127,15 @@ const alert = (text, type = "", timeout = 3333) => {
 
     function initVideo(video) {
         const duration = video.duration;
+        if (isNaN(duration) || duration <= 0) {
+            alert("影片載入中...");
+            return;
+        }
+
         countdownSec = Math.round(duration) + 5; // 多等待 5 秒
         totalSec = countdownSec;
-        alert(`偵測到影片長度 ${countdownSec} 秒`);
+
+        alert(`影片長度 ${countdownSec} 秒`);
         video.click();
         video.play();
         video.muted = !video.muted;
@@ -142,7 +148,7 @@ const alert = (text, type = "", timeout = 3333) => {
 
     function waitToNextPage() {
         const endDate = new Date(Date.now() + countdownSec * 1000);
-        alert(`下課時間：${endDate.toLocaleString()}`);
+        alert(`換課時間：${endDate.toLocaleString()}`);
 
         countdownInterval = setInterval(() => {
             countdownSec = Math.round((endDate - Date.now()) / 1000);
@@ -216,7 +222,7 @@ const alert = (text, type = "", timeout = 3333) => {
             console.log(`${qKey} > ${ansArr.map((ansText) => `${ansText}`).join(", ")}`);
             data[qKey] = ansArr;
         });
-        
+
         // 讀取現有資料，若存在且在一小時內更新過，則合併，否則使用新資料
         let existingData = {};
         try {
@@ -226,25 +232,25 @@ const alert = (text, type = "", timeout = 3333) => {
                 const quizTime = localStorage.getItem("quizTime") ? parseInt(localStorage.getItem("quizTime")) : 0;
                 const currentTime = Date.now();
                 const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
-                
+
                 // 檢查時間戳記是否在一小時內
                 if (currentTime - quizTime <= oneHourInMs) {
                     existingData = storageData;
-                } 
+                }
             }
         } catch (e) {
             alert("前份小抄異常", "error");
         }
-        
+
         // 合併新舊資料，以新資料為優先
         const mergedData = { ...existingData, ...data };
 
         debugger;
-        
+
         // 儲存資料和時間戳記
         localStorage.setItem(title, JSON.stringify(mergedData));
         localStorage.setItem("quizTime", Date.now().toString());
-        
+
         alert("小抄已就緒");
     }
 
@@ -252,21 +258,21 @@ const alert = (text, type = "", timeout = 3333) => {
     function readAnswers() {
         const dataStr = localStorage.getItem("quiz");
         const quizTimeStr = localStorage.getItem("quizTime");
-        
+
         if (!dataStr) {
             alert("沒有找到小抄");
             return;
         }
-        
+
         // 檢查時間是否有效（小於一小時）
         const quizTime = quizTimeStr ? parseInt(quizTimeStr) : 0;
         const currentTime = Date.now();
         const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
-        
+
         if (currentTime - quizTime > oneHourInMs) {
             alert("小抄已過期（超過1小時），但仍將嘗試使用");
         }
-        
+
         let quizAnswers;
         try {
             quizAnswers = JSON.parse(dataStr);
@@ -306,6 +312,7 @@ const alert = (text, type = "", timeout = 3333) => {
 
     function tryGetElements(selector) {
         try {
+            console.log("[tryGetElements] selector:", selector);
             const getDeepestDocument = (doc, iframeSelectors = ["iframe#content", "iframe#playContent", "iframe#Content"]) => {
                 if (!doc || iframeSelectors.length === 0) return doc;
 
