@@ -2,7 +2,7 @@
 // @name         國泰自我學習網
 // @namespace    http://tampermonkey.net/
 // @source       https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Cathay-Learn.user.js
-// @version      1.0.8
+// @version      1.0.9
 // @description  國泰自我學習網
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
@@ -264,14 +264,17 @@ const alert = (text, type = "", timeout = 3333) => {
         const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
         
         if (currentTime - quizTime > oneHourInMs) {
-            alert("小抄已過期（超過1小時），但仍將嘗試使用");
+            alert("小抄已過期（超過1小時），請重新製作小抄");
+            localStorage.removeItem("quiz");
+            localStorage.removeItem("quizTime");
+            return;
         }
         
         let quizAnswers;
         try {
             quizAnswers = JSON.parse(dataStr);
         } catch (e) {
-            alert("看不懂小抄");
+            alert(`看不懂小抄 ${e.message}`, "error");
             return;
         }
 
