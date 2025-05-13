@@ -2,7 +2,7 @@
 // @name         國泰自我學習網
 // @namespace    http://tampermonkey.net/
 // @source       https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Cathay-Learn.user.js
-// @version      1.0.9
+// @version      1.1.0
 // @description  國泰自我學習網
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
@@ -175,21 +175,38 @@ const alert = (text, type = "", timeout = 3333) => {
             textContent: "👀 偷看答案",
             class: "cathay-btn cathay-btn-check",
         });
-        submitAllButton.addEventListener("click", function () {
-            tryClickButton("完成", () => tryClickButton("確認", () => tryClickButton("全部", () => alert("請手動點擊「再測驗一次」按鈕"))));
-        });
-
-        const saveButton = GM_addElement(document.body, "button", {
+        const saveAnswerButton = GM_addElement(document.body, "button", {
             textContent: "💾 製作小抄",
             class: "cathay-btn cathay-btn-save",
         });
-        saveButton.addEventListener("click", saveAnswers);
-
-        const readButton = GM_addElement(document.body, "button", {
+        const writeAnswerButton = GM_addElement(document.body, "button", {
             textContent: "📖 快樂作弊",
             class: "cathay-btn cathay-btn-read",
         });
-        readButton.addEventListener("click", readAnswers);
+
+        submitAllButton.addEventListener("click", function () {
+            // 新增：自動點擊所有「下一頁」直到出現「完成」
+            function clickNextUntilFinish() {
+                const nextBtn = tryGetButtonByText("下一頁");
+                const finishBtn = tryGetButtonByText("完成");
+                if (nextBtn) {
+                    alert("找到「下一頁」，自動點擊");
+                    nextBtn.click();
+                    setTimeout(clickNextUntilFinish, 500); // 遞迴繼續尋找
+                } else if (finishBtn) {
+                    alert("已找到「完成」按鈕，開始自動交卷流程");
+                    tryClickButton("完成", () => tryClickButton("確認", () => tryClickButton("全部", () => setTimeout(() => {
+                        saveAnswers();
+                    }, 1000))));
+                } else {
+                    alert("找不到「下一頁」或「完成」按鈕，請檢查頁面狀態", "error");
+                }
+            }
+            clickNextUntilFinish();
+        });
+        saveAnswerButton.addEventListener("click", saveAnswers);
+
+        writeAnswerButton.addEventListener("click", writeAnswers);
     }
 
     // 儲存答案功能
@@ -239,28 +256,26 @@ const alert = (text, type = "", timeout = 3333) => {
                 }
             }
         } catch (e) {
-            alert("前份小抄異常", "error");
+            alert("小抄題庫異常", "error");
         }
 
         // 合併新舊資料，以新資料為優先
         const mergedData = { ...existingData, ...data };
 
-        debugger;
-
         // 儲存資料和時間戳記
         localStorage.setItem(title, JSON.stringify(mergedData));
         localStorage.setItem("quizTime", Date.now().toString());
 
-        alert("小抄已就緒");
+        alert("小抄已就緒", "", 10000);
     }
 
-    // 新增讀取並標示答案功能
-    function readAnswers() {
+    // 讀取、標示、抄寫答案
+    function writeAnswers() {
         const dataStr = localStorage.getItem("quiz");
         const quizTimeStr = localStorage.getItem("quizTime");
 
         if (!dataStr) {
-            alert("沒有找到小抄");
+            alert("找不到小抄");
             return;
         }
 
