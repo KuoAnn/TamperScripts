@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      2025-05-25
+// @version      1.25.525.1416
 // @description  try to take over the world!
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
@@ -34,6 +34,7 @@ const config = {
         if (shouldRefresh) {
             console.log("偵測到需重整的報名狀態，將自動重整頁面");
             setTimeout(() => location.reload(), 200);
+            return;
         }
 
         const ticketUnits = visibleRegisterStatusEls.filter((el) => el.classList.contains("register-status-IN_STOCK"));
@@ -52,6 +53,7 @@ const config = {
             if (document.querySelectorAll(".ticket-unit").length === 0) {
                 console.log("所有票券均不符合條件，將自動重整頁面");
                 setTimeout(() => location.reload(), 200);
+                return;
             }
 
             // 自動勾選同意條款
