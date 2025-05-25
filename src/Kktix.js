@@ -12,8 +12,8 @@
 // ==/UserScript==
 
 const config = {
-    keyword: [""],
-    qty: 2,
+    keyword: ["1700"],
+    qty: 1,
     member_code: "VEZ9XJ",
 };
 let step = 0;
@@ -75,7 +75,7 @@ let step = 0;
         // 依序比對每個 keyword
         let matchedUnits = [];
         for (let i = 0; i < keywords.length; i++) {
-            const keyword = keywords[i];
+            const keyword = keywords[i].trim();
             if (keyword === "") {
                 matchedUnits = ticketUnits;
             } else {
@@ -102,6 +102,27 @@ let step = 0;
             input.dispatchEvent(new Event("blur", { bubbles: true }));
             input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "0" }));
             input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "0" }));
+        }
+    }
+
+    function checkAndClickNext() {
+        // 檢查是否有任一票券已填寫數量
+        const qtyInputs = document.querySelectorAll("input[type='text'][ng-model='ticketModel.quantity']");
+        const qtyFilled = Array.from(qtyInputs).some(input => Number(input.value) > 0);
+        // 檢查會員代碼（如有 input）
+        const memberInput = document.querySelector("input[type='text'][ng-if=\"oq.type == 'member_code'\"]");
+        const memberFilled = !memberInput || (memberInput.value && memberInput.value.trim() !== "");
+        // 檢查同意條款
+        const agreeTerms = document.getElementById("person_agree_terms");
+        const agreeChecked = agreeTerms && agreeTerms.checked;
+        if (qtyFilled && memberFilled && agreeChecked) {
+            const nextBtn = document.querySelector(".register-new-next-button-area button.btn-primary");
+            if (nextBtn && !nextBtn.disabled) {
+                setTimeout(() => {
+                    // nextBtn.click();
+                    console.log("已自動點擊下一步");
+                }, 200);
+            }
         }
     }
 
@@ -134,6 +155,7 @@ let step = 0;
                 selectTicketByKeyword();
             }
             autoFillMemberCode();
+            checkAndClickNext();
         }
     }
 
