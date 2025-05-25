@@ -12,9 +12,11 @@
 // ==/UserScript==
 
 const config = {
-    qty: 1,
+    keyword: [""],
+    qty: 2,
     member_code: "VEZ9XJ",
 };
+let step = 0;
 
 (function () {
     "use strict";
@@ -61,8 +63,46 @@ const config = {
             console.log("填入會員代碼:", config.member_code);
             input.value = config.member_code;
             input.dispatchEvent(new Event("input", { bubbles: true }));
-            observer.disconnect();
         });
+    }
+
+    function selectTicketByKeyword() {
+        const keywords = config.keyword;
+        const qty = config.qty;
+        const ticketUnits = Array.from(document.querySelectorAll(".ticket-unit"));
+        // 將 ticket-unit 文字內容做前處理（去除逗號、去除多餘空白）
+        const getText = (el) => el.textContent.replace(/,/g, "").replace(/\s+/g, " ").trim();
+        // 依序比對每個 keyword
+        let matchedUnits = [];
+        for (let i = 0; i < keywords.length; i++) {
+            const keyword = keywords[i];
+            if (keyword === "") {
+                matchedUnits = ticketUnits;
+            } else {
+                const andWords = keyword.split(" ").filter(Boolean);
+                matchedUnits = ticketUnits.filter((el) => {
+                    const text = getText(el);
+                    return andWords.every((word) => text.includes(word));
+                });
+            }
+            if (matchedUnits.length > 0) break;
+        }
+        if (matchedUnits.length === 0) return;
+        // 隨機選一個
+        const selected = matchedUnits[Math.floor(Math.random() * matchedUnits.length)];
+        // 標記背景色
+        selected.style.backgroundColor = "yellow";
+        // 找到 input 並填入數量
+        const input = selected.querySelector("input[type='text'][ng-model='ticketModel.quantity']");
+        if (input) {
+            // 觸發所有 Angular 事件
+            input.value = qty;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+            input.dispatchEvent(new Event("blur", { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "0" }));
+            input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "0" }));
+        }
     }
 
     function handlePage() {
@@ -86,6 +126,13 @@ const config = {
             }
 
             autoCheckAgreeTerms();
+            observer.disconnect();
+
+            if (step === 0) {
+                step = 1;
+                console.log("第一步：選擇票券");
+                selectTicketByKeyword();
+            }
             autoFillMemberCode();
         }
     }
