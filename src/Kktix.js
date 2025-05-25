@@ -6,6 +6,8 @@
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=kktix.com
+// @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/Kktix.user.js
+// @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/Kktix.user.js
 // @grant        none
 // ==/UserScript==
 
