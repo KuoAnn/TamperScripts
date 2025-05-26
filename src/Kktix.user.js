@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.25.525.1416
+// @version      1.25.526.2218
 // @description  try to take over the world!
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
@@ -119,7 +119,7 @@ let step = 0;
             const nextBtn = document.querySelector(".register-new-next-button-area button.btn-primary");
             if (nextBtn && !nextBtn.disabled) {
                 setTimeout(() => {
-                    // nextBtn.click();
+                    nextBtn.click();
                     console.log("已自動點擊下一步");
                 }, 200);
             }
