@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.25.526.2218
+// @version      1.25.527.1318
 // @description  try to take over the world!
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
@@ -38,7 +38,7 @@ let step = 0;
     function clearTicketUnits() {
         document.querySelectorAll(".ticket-unit").forEach((row) => {
             const text = row.textContent;
-            if (text.includes("暫無票券") || text.includes("已售完")) {
+            if (text.includes("暫無票券") || text.includes("已售完") || text.includes("輪椅席")) {
                 row.remove();
             }
             const match = text.match(/剩\s*(\d+)\s*張/);
