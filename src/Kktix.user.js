@@ -38,7 +38,7 @@ let step = 0;
     function clearTicketUnits() {
         document.querySelectorAll(".ticket-unit").forEach((row) => {
             const text = row.textContent;
-            if (text.includes("暫無票券") || text.includes("已售完")) {
+            if (text.includes("暫無票券") || text.includes("已售完") || text.includes("輪椅席")) {
                 row.remove();
             }
             const match = text.match(/剩\s*(\d+)\s*張/);
