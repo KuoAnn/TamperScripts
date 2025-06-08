@@ -2,8 +2,7 @@
 // @name         國泰自我學習網
 // @namespace    http://tampermonkey.net/
 // @source       https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Cathay-Learn.user.js
-// @version      1.1.0
-// @description  國泰自我學習網
+// @version      1.1.1
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
 // @connect      *
@@ -45,6 +44,7 @@ const alert = (text, type = "", timeout = 3333) => {
 
 (function () {
     const TIMEOUT_SECOND = 300;
+    const PDF_SECOND = 100;
     const LOAD_TIME_SECOND = 20;
     ("use strict");
 
@@ -63,16 +63,21 @@ const alert = (text, type = "", timeout = 3333) => {
         try {
             // 檢查影片元素
             const videos = tryGetElements("video");
-            const button = tryGetButtonByText("測驗開始");
-            if (videos?.length > 0) {
-                initVideo(videos[0]);
-            } else if (button) {
-                clearInterval(onloadInterval);
-                alert("測驗開始");
-                button.click();
-                hideCountdownRow();
-                createAutoAnswerButton();
-                return;
+            if (videos === "CORS") {
+                alert("無法讀取影片，可能為 PDF 檔案");
+                countdownSec = PDF_SECOND;
+            } else {
+                const button = tryGetButtonByText("測驗開始");
+                if (videos?.length > 0) {
+                    initVideo(videos[0]);
+                } else if (button) {
+                    clearInterval(onloadInterval);
+                    alert("測驗開始");
+                    button.click();
+                    hideCountdownRow();
+                    createAutoAnswerButton();
+                    return;
+                }
             }
         } catch (error) {
             alert(error.message, "error");
@@ -195,9 +200,15 @@ const alert = (text, type = "", timeout = 3333) => {
                     setTimeout(clickNextUntilFinish, 500); // 遞迴繼續尋找
                 } else if (finishBtn) {
                     alert("已找到「完成」按鈕，開始自動交卷流程");
-                    tryClickButton("完成", () => tryClickButton("確認", () => tryClickButton("全部", () => setTimeout(() => {
-                        saveAnswers();
-                    }, 1000))));
+                    tryClickButton("完成", () =>
+                        tryClickButton("確認", () =>
+                            tryClickButton("全部", () =>
+                                setTimeout(() => {
+                                    saveAnswers();
+                                }, 1000)
+                            )
+                        )
+                    );
                 } else {
                     alert("找不到「下一頁」或「完成」按鈕，請檢查頁面狀態", "error");
                 }
@@ -353,8 +364,13 @@ const alert = (text, type = "", timeout = 3333) => {
             const elements = deepestDoc.querySelectorAll(selector);
             return elements?.length > 0 ? elements : null;
         } catch (error) {
+            if (error.name == "SecurityError") {
+                return "CORS";
+            }
+
             alert(`[tryGetElements] error: ${error.message}`, "error");
             console.error(`[tryGetElements] error:`, error);
+
             return null;
         }
     }
