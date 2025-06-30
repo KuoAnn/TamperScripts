@@ -12,14 +12,17 @@
 // ==/UserScript==
 
 const config = {
-    keyword: ["1700"],
+    keyword: [""],
     qty: 1,
     member_code: "VEZ9XJ",
+    refresh_time: "2025/06/30 12:59:59",
 };
 let step = 0;
 
 (function () {
-    "use strict";
+    ("use strict");
+
+    startCountdown();
 
     const observer = new MutationObserver(() => {
         console.log("偵測到 DOM 變更");
@@ -108,7 +111,7 @@ let step = 0;
     function checkAndClickNext() {
         // 檢查是否有任一票券已填寫數量
         const qtyInputs = document.querySelectorAll("input[type='text'][ng-model='ticketModel.quantity']");
-        const qtyFilled = Array.from(qtyInputs).some(input => Number(input.value) > 0);
+        const qtyFilled = Array.from(qtyInputs).some((input) => Number(input.value) > 0);
         // 檢查會員代碼（如有 input）
         const memberInput = document.querySelector("input[type='text'][ng-if=\"oq.type == 'member_code'\"]");
         const memberFilled = !memberInput || (memberInput.value && memberInput.value.trim() !== "");
@@ -156,6 +159,68 @@ let step = 0;
             }
             autoFillMemberCode();
             checkAndClickNext();
+        }
+    }
+
+    // 左上角倒數顯示元素
+    function createCountdownDisplay() {
+        let el = document.getElementById("kktix-countdown-display");
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "kktix-countdown-display";
+            el.style.position = "fixed";
+            el.style.top = "10px";
+            el.style.left = "10px";
+            el.style.zIndex = "9999";
+            el.style.background = "rgba(0,0,0,0.7)";
+            el.style.color = "#fff";
+            el.style.padding = "8px 16px";
+            el.style.borderRadius = "8px";
+            el.style.fontSize = "18px";
+            el.style.fontWeight = "bold";
+            el.style.pointerEvents = "none";
+            // 不在這裡加入 document.body
+        }
+        return el;
+    }
+
+    // 倒數邏輯
+    function startCountdown() {
+        const refreshTime = new Date(config.refresh_time.replace(/-/g, "/"));
+        const display = createCountdownDisplay();
+        let stopped = false;
+        let displayAppended = false;
+        const intervalId = setInterval(() => {
+            if (stopped) {
+                clearInterval(intervalId);
+                return;
+            }
+            update();
+        }, 500);
+        function update() {
+            console.log("倒數更新中...");
+            if (stopped) return;
+            const now = new Date();
+            const diff = refreshTime - now;
+            if (diff <= 0) {
+                stopped = true;
+                if (diff > -500) {
+                    location.reload();
+                }
+                else{
+                    console.log("倒數結束");
+                }
+                return;
+            }
+            // 顯示倒數
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            display.textContent = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+            if (!displayAppended && document.body) {
+                document.body.appendChild(display);
+                displayAppended = true;
+            }
         }
     }
 
