@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cathay card event register
 // @namespace    https://www.cathaybk.com.tw/promotion/CreditCard/Event
-// @version      1.0.6
-// @description  try to take over the world!
+// @version      1.0.7
+// @description  自動參加國泰信用卡登錄活動，填入個人資訊並自動辨識驗證碼。
 // @author       KuoAnn
 // @match        https://www.cathaybk.com.tw/promotion*
 // @connect      maxbot.dropboxlike.com
@@ -18,17 +18,20 @@ GM_addStyle(`
   .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
   .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
 `);
+
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
-const alert = (str, timeout) => {
+function alert(str, timeout = 3000) {
     const msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: str });
     alertMQ.push(msg);
     if (alertMQ.length > 10) {
         const old = alertMQ.shift();
-        alertDiv.contains(old) && alertDiv.removeChild(old);
+        if (alertDiv.contains(old)) alertDiv.removeChild(old);
     }
-    setTimeout(() => alertDiv.contains(msg) && alertDiv.removeChild(msg), timeout > 0 ? timeout : 3000);
-};
+    setTimeout(() => {
+        if (alertDiv.contains(msg)) alertDiv.removeChild(msg);
+    }, timeout);
+}
 
 // 個人參數
 const USER_ID_KEY = "userId";
@@ -46,192 +49,167 @@ let _isLoaded = false;
 (function () {
     "use strict";
 
-    const getUserData = (key, promptMessage) => {
+    function getUserData(key, promptMessage) {
         let value = localStorage.getItem(key);
-        if (value == null) {
-            value = prompt(promptMessage);
-            while (!value) {
+        if (!value) {
+            do {
                 value = prompt(promptMessage);
-            }
+            } while (!value);
             localStorage.setItem(key, value);
         }
         return value;
-    };
+    }
 
     const USER_ID = getUserData(USER_ID_KEY, "身分證字號:");
     const USER_BIRTH = getUserData(USER_BIRTH_KEY, "生日 (YYYYMMDD):");
-    const observer = new MutationObserver((mo) => {
-        mo.forEach((mutation) => {
-            if (mutation.type === "childList") {
-                console.log("Mutated");
 
-                const captchaImage = document.querySelector(CAPTCHA_IMAGE_SELECTOR);
-                if (!_isLoaded && captchaImage) {
-                    _isLoaded = true;
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.type !== "childList") continue;
 
-                    const idInput = document.querySelector(".input-element#ID");
-                    if (idInput) {
-                        idInput.value = USER_ID;
-                    }
+            // 驗證碼流程
+            const captchaImage = document.querySelector(CAPTCHA_IMAGE_SELECTOR);
+            if (!_isLoaded && captchaImage) {
+                _isLoaded = true;
+                const idInput = document.querySelector(".input-element#ID");
+                if (idInput) idInput.value = USER_ID;
+                const birthInput = document.querySelector(".input-element#BirthDate");
+                if (birthInput) birthInput.value = USER_BIRTH;
+                const checkAgree = document.querySelector(".checkbox#CheckAgreement");
+                if (checkAgree) checkAgree.checked = true;
+                _captchaBase64 = getCaptchaImage(captchaImage);
+                if (_captchaBase64) setCaptchaAndSubmit(_captchaBase64, CAPTCHA_INPUT_SELECTOR);
+            }
 
-                    const birthInput = document.querySelector(".input-element#BirthDate");
-                    if (birthInput) {
-                        birthInput.value = USER_BIRTH;
-                    }
-
-                    const checkAgree = document.querySelector(".checkbox#CheckAgreement");
-                    if (checkAgree) {
-                        checkAgree.checked = true;
-                    }
-
-                    if (captchaImage) {
-                        _captchaBase64 = getCaptchaImage(captchaImage);
-                        if (_captchaBase64) {
-                            setCaptchaAndSubmit(_captchaBase64, "#Captcha");
+            // 自動註冊流程
+            const registerBtns = document.querySelectorAll(".btn.btn-sign");
+            if (!_isLoaded && registerBtns.length > 0) {
+                _isLoaded = true;
+                registerBtns.forEach((btn) => {
+                    const cid = btn.getAttribute("data-campaign-id");
+                    if (cid) {
+                        try {
+                            btn.click();
+                            const title = btn.closest(".tr").querySelector(".td.wtitle a").textContent.replace(/\r?\n/g, "").trim();
+                            alert(`註冊 ${title}`);
+                        } catch (error) {
+                            console.error("註冊失敗:", error);
                         }
                     }
-                }
-
-                const registerBtns = document.querySelectorAll(".btn.btn-sign");
-                if (!_isLoaded && registerBtns.length > 0) {
-                    _isLoaded = true;
-                    console.log("Register Loaded");
-                    registerBtns.forEach((btn) => {
-                        var cid = btn.getAttribute("data-campaign-id");
-                        if (cid) {
-                            try {
-                                btn.click();
-
-                                var title = btn.closest(".tr").querySelector(".td.wtitle a").textContent.replace("\r\n", "").trim();
-                                alert("註冊 " + title);
-                            } catch (error) {
-                                console.error(error);
-                            }
-                        }
-                    });
-                }
+                });
             }
-        });
-
-        function getCaptchaImage() {
-            const element = document.querySelector(CAPTCHA_IMAGE_SELECTOR);
-            if (element) {
-                const canvas = document.createElement("canvas");
-                const context = canvas.getContext("2d");
-                canvas.height = element.naturalHeight;
-                canvas.width = element.naturalWidth;
-                context.drawImage(element, 0, 0);
-                const img_data = canvas.toDataURL();
-                return img_data ? img_data.split(",")[1] : "";
-            }
-            return "";
         }
+    });
 
-        function setCaptchaAndSubmit(image_data) {
-            GM_xmlhttpRequest({
-                method: "POST",
-                url: CAPTCHA_API_URL,
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                data: JSON.stringify({ image_data: image_data }),
-                onload: function (r) {
-                    console.log(r.responseText);
-                    if (r.status == 200) {
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // 取得驗證碼 base64
+    function getCaptchaImage(element) {
+        if (!element) return "";
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        canvas.height = element.naturalHeight;
+        canvas.width = element.naturalWidth;
+        context.drawImage(element, 0, 0);
+        const img_data = canvas.toDataURL();
+        return img_data ? img_data.split(",")[1] : "";
+    }
+
+    // 辨識驗證碼並送出
+    function setCaptchaAndSubmit(image_data, inputSelector) {
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: CAPTCHA_API_URL,
+            headers: { "Content-Type": "application/json" },
+            data: JSON.stringify({ image_data }),
+            onload: function (r) {
+                try {
+                    if (r.status === 200) {
                         let answer = JSON.parse(r.responseText).answer;
-                        // auto guess
                         answer = answer.replace(/[gq]/g, "9");
-                        if (answer && answer.match(/^\d{4}$/)) {
-                            const captchaInput = document.querySelector(CAPTCHA_INPUT_SELECTOR);
+                        if (/^\d{4}$/.test(answer)) {
+                            const captchaInput = document.querySelector(inputSelector);
                             if (captchaInput) {
                                 captchaInput.value = answer;
                                 const submitButton = document.querySelector(SUBMIT_SELECTOR);
-                                if (submitButton) {
-                                    submitButton.click();
-                                }
+                                if (submitButton) submitButton.click();
                             }
                         } else {
                             refreshCaptcha();
                         }
                     } else {
-                        console.error(" Fail", r.statusText + "|" + r.responseText);
+                        console.error("驗證碼 API 失敗", r.statusText, r.responseText);
                     }
-                },
-                onerror: function (error) {
-                    console.error(" Error:", error);
-                },
-            });
+                } catch (err) {
+                    console.error("驗證碼解析錯誤", err);
+                }
+            },
+            onerror: function (error) {
+                console.error("驗證碼 API 錯誤:", error);
+            },
+        });
+    }
+
+    // 重新整理驗證碼
+    function refreshCaptcha() {
+        const imgCaptcha = document.querySelector(CAPTCHA_REFRESH_SELECTOR);
+        if (imgCaptcha) {
+            imgCaptcha.click();
+            const interval = setInterval(() => {
+                const image_data = getCaptchaImage(document.querySelector(CAPTCHA_IMAGE_SELECTOR));
+                if (image_data && _captchaBase64 && image_data !== _captchaBase64) {
+                    clearInterval(interval);
+                    setCaptchaAndSubmit(image_data, CAPTCHA_INPUT_SELECTOR);
+                }
+            }, 1000);
         }
+    }
 
-        function refreshCaptcha() {
-            const imgCaptcha = document.querySelector(CAPTCHA_REFRESH_SELECTOR);
-            if (imgCaptcha) {
-                console.log("Refresh Captcha");
-                imgCaptcha.click();
-
-                const interval = setInterval(() => {
-                    const image_data = getCaptchaImage();
-                    if (image_data !== "" && _captchaBase64 && image_data !== _captchaBase64) {
-                        clearInterval(interval);
-                        setCaptchaAndSubmit(image_data);
+    // 活動攻擊（遞迴註冊）
+    function attack(campaignId) {
+        if (!campaignId) return;
+        alert(`Attack ${campaignId}`);
+        const form = $("#form-hidden");
+        const token = form.find('input[name="__RequestVerificationToken"]').val();
+        $.ajax({
+            url: form[0].action,
+            type: form[0].method,
+            cache: false,
+            data: `CampaignId=${campaignId}&__RequestVerificationToken=${token}`,
+            dataType: "json",
+            success: function (response) {
+                if (response) {
+                    alert(response.signResultText);
+                    if (response.signResult > 1) attack(campaignId);
+                    switch (response.signResult) {
+                        case 0:
+                        case 1:
+                            alert(`<h1 style='color:green'>SUCCESS! SN=${response.signUpNumber}</h1>`);
+                            break;
+                        case 9001:
+                            alert("Full");
+                            break;
+                        case 9998:
+                            alert("Rush Hour");
+                            break;
+                        case 9999:
+                            alert("Busy");
+                            break;
+                        default:
+                            alert("Unknown result");
                     }
-                }, 1000);
-            }
-        }
+                }
+            },
+            error: function (xhr) {
+                if (xhr.status === 401) {
+                    alert("error: xhr=401");
+                } else if (typeof IsHotTime !== 'undefined' && IsHotTime) {
+                    alert("error: Rush Hour");
+                } else {
+                    alert("error: Busy");
+                }
+            },
+        });
+    }
 
-        const attack = function (campaignId) {
-            if (campaignId) {
-                alert(`Attack ${campaignId}`);
-                const form = $("#form-hidden");
-                const token = form.find('input[name="__RequestVerificationToken"]').val();
-
-                $.ajax({
-                    url: form[0].action,
-                    type: form[0].method,
-                    cache: false,
-                    data: `CampaignId=${campaignId}&__RequestVerificationToken=${token}`,
-                    dataType: "json",
-                    success: function (response) {
-                        if (response) {
-                            alert(response.signResultText);
-
-                            if (response.signResult > 1) {
-                                // re-attack
-                                attack(campaignId);
-                            }
-
-                            switch (response.signResult) {
-                                case 0:
-                                case 1:
-                                    alert(`<h1 style='color:green'>SUCCESS! SN=${response.signUpNumber}</h1>`);
-                                    break;
-                                case 9001:
-                                    alert("Full");
-                                    break;
-                                case 9998:
-                                    alert("Rush Hour");
-                                    break;
-                                case 9999:
-                                    alert("Busy");
-                                    break;
-                                default:
-                                    alert("Unknown result");
-                            }
-                        }
-                    },
-                    error: function (xhr) {
-                        if (xhr.status === 401) {
-                            alert("error: xhr=401");
-                        } else if (IsHotTime) {
-                            alert("error: Rush Hour");
-                        } else {
-                            alert("error: Busy");
-                        }
-                    },
-                });
-            }
-        };
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
 })();
