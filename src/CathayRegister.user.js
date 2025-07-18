@@ -9,6 +9,8 @@
 // @grant        GM_addStyle
 // @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @connect      agent2.cathaylife.com.tw
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayRegister.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayRegister.user.js
@@ -26,6 +28,9 @@
     let applyInfoFetched = false;
     let debounceTimer = null;
     let lastUrl = window.location.href;
+
+    // act_no_data 快取 map，使用 GM_setValue/GM_getValue
+    const ACTNO_CACHE_KEY = 'act_no_data';
 
     /**
      * 勾選同意條款 checkbox，並處理例外狀況
@@ -68,7 +73,7 @@
 
     /**
      * 取得申請資訊，並於 console 顯示結果
-     * 強化錯誤處理、API 回應驗證與註解
+     * 強化快取、錯誤處理、API 回應驗證與註解
      * @returns {void}
      */
     function fetchApplyInfo() {
@@ -77,9 +82,61 @@
             console.warn('[fetchApplyInfo] actNo 不存在，略過 API 呼叫');
             return;
         }
-        const url = `https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC12/checkApply?act_no=${actNo}&que_no=0`;
-        console.info(`[fetchApplyInfo] 發查申請資訊 API: ${url}`);
-        try {
+        // 先查詢問卷資料快取
+        fetchQuestionnaireData(actNo).then((data) => {
+            let queNo = data && data.que_no ? data.que_no : 0;
+            // 構建查詢字串
+            const url = `https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC12/checkApply?act_no=${actNo}&que_no=${queNo}`;
+            console.info(`[fetchApplyInfo] 發查申請資訊 API: ${url}`);
+            try {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url,
+                    headers: { Accept: 'application/json' },
+                    onload: function (response) {
+                        try {
+                            if (!response || typeof response.responseText !== 'string') {
+                                console.error('[fetchApplyInfo] API 回應為空或格式錯誤');
+                                return;
+                            }
+                            const json = JSON.parse(response.responseText);
+                            if (json && typeof json === "object" && json.hasOwnProperty("returnCode")) {
+                                applyInfoFetched = true;
+                                console.info("[fetchApplyInfo] 申請資訊:", json);
+                            } else {
+                                console.warn("[fetchApplyInfo] 回應格式非預期:", response.responseText);
+                            }
+                        } catch (e) {
+                            console.error('[fetchApplyInfo] 回應解析失敗', e, response && response.responseText);
+                        }
+                    },
+                    onerror: function (err) {
+                        console.error('[fetchApplyInfo] API 請求失敗', err);
+                    },
+                });
+            } catch (err) {
+                console.error('[fetchApplyInfo] GM_xmlhttpRequest 執行失敗', err);
+            }
+        });
+    }
+
+    /**
+     * 取得問卷資料，快取於 GM_setValue
+     * @param {string} actNo 活動編號
+     * @returns {Promise<object|null>} 回傳 data 物件或 null
+     */
+    function fetchQuestionnaireData(actNo) {
+        return new Promise((resolve) => {
+            if (!actNo) return resolve(null);
+            // 先檢查快取（同步取得值）
+            const cache = GM_getValue(ACTNO_CACHE_KEY, {});
+            if (cache && cache[actNo]) {
+                resolve(cache[actNo]);
+                return;
+            }
+            // 無快取則查詢 API
+            const url = `https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC06/getQuestionnaireData?act_no=${actNo}`;
+            console.info(`[fetchQuestionnaireData] 查詢問卷 API: ${url}`);
             GM_xmlhttpRequest({
                 method: 'GET',
                 url,
@@ -87,27 +144,32 @@
                 onload: function (response) {
                     try {
                         if (!response || typeof response.responseText !== 'string') {
-                            console.error('[fetchApplyInfo] API 回應為空或格式錯誤');
+                            console.error('[fetchQuestionnaireData] API 回應為空或格式錯誤');
+                            resolve(null);
                             return;
                         }
                         const json = JSON.parse(response.responseText);
-                        if (json && typeof json === "object" && json.hasOwnProperty("returnCode") && json.returnCode === 0) {
-                            console.info("[fetchApplyInfo] 申請資訊:", json);
-                            applyInfoFetched = true;
+                        if (json && json.returnCode === 0 && Array.isArray(json.data) && json.data.length > 0) {
+                            // 快取資料（同步取得舊值，然後同步設定新值）
+                            const oldCache = GM_getValue(ACTNO_CACHE_KEY, {});
+                            const newCache = { ...oldCache, [actNo]: json.data[0] };
+                            GM_setValue(ACTNO_CACHE_KEY, newCache);
+                            resolve(json.data[0]);
                         } else {
-                            console.warn("[fetchApplyInfo] 回應格式非預期:", response.responseText);
+                            console.warn('[fetchQuestionnaireData] 回應格式非預期:', response.responseText);
+                            resolve(null);
                         }
                     } catch (e) {
-                        console.error('[fetchApplyInfo] 回應解析失敗', e, response && response.responseText);
+                        console.error('[fetchQuestionnaireData] 回應解析失敗', e, response && response.responseText);
+                        resolve(null);
                     }
                 },
                 onerror: function (err) {
-                    console.error('[fetchApplyInfo] API 請求失敗', err);
+                    console.error('[fetchQuestionnaireData] API 請求失敗', err);
+                    resolve(null);
                 },
             });
-        } catch (err) {
-            console.error('[fetchApplyInfo] GM_xmlhttpRequest 執行失敗', err);
-        }
+        });
     }
 
     /**
