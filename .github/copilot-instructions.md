@@ -13,6 +13,7 @@
   - `@grant` 明確列出所需 Tampermonkey API（如 GM_setValue、GM_getValue 等）
   - `@downloadURL`、`@updateURL` 指向 GitHub raw 路徑，方便自動更新
   - 依需求加入 `@require`（外部 JS）、`@resource`（外部資源）、`@icon`（腳本圖示）、`@connect`（允許跨域請求）
+  - 每次腳本修改時，必須檢查並確認 `@description` 是否需要更新，若有變更請一併更新描述內容。
 
 ## 程式設計建議
 - 優先使用 Tampermonkey 提供的 GM_* API 操作儲存、DOM、網路請求等，避免直接操作 window/localStorage。
