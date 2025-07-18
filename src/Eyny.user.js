@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eyny 自動登入腳本
 // @namespace    https://*.eyny.com/*
-// @version      1.0.4
+// @version      1.0.5
 // @description  自動填入帳號密碼並登入 Eyny 論壇，支援安全提問自動填答。
 // @author       KuoAnn
 // @match        https://*.eyny.com/*
@@ -27,21 +27,20 @@
     }
 
     /**
-     * 註冊 Tampermonkey 選單命令，設定帳號密碼
+     * 註冊 Tampermonkey 選單命令，設定帳號與密碼
      */
     function registerMenuCommands() {
-        GM_registerMenuCommand("設定 Eyny 帳號", async () => {
-            const input = prompt("請輸入 Eyny 帳號：", await GM_getValue("eyny_user", ""));
-            if (input !== null) {
-                await GM_setValue("eyny_user", input);
-                showAlert("帳號已儲存！");
+        GM_registerMenuCommand("設定 Eyny 帳號與密碼", async () => {
+            const user = prompt("請輸入 Eyny 帳號：", await GM_getValue("eyny_user", ""));
+            if (user !== null) {
+                await GM_setValue("eyny_user", user);
             }
-        });
-        GM_registerMenuCommand("設定 Eyny 密碼", async () => {
-            const input = prompt("請輸入 Eyny 密碼：", await GM_getValue("eyny_pswd", ""));
-            if (input !== null) {
-                await GM_setValue("eyny_pswd", input);
-                showAlert("密碼已儲存！");
+            const pswd = prompt("請輸入 Eyny 密碼：", await GM_getValue("eyny_pswd", ""));
+            if (pswd !== null) {
+                await GM_setValue("eyny_pswd", pswd);
+            }
+            if (user !== null || pswd !== null) {
+                showAlert("帳號與密碼已儲存！");
             }
         });
     }
