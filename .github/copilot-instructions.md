@@ -22,6 +22,7 @@
 - 用 `GM_xmlhttpRequest` 發送跨域請求，並於 metadata block 加入 `@connect` 權限。
 - 用 `GM_notification` 提示用戶重要事件。
 - 用 `GM_registerMenuCommand` 增加自訂選單，方便用戶操作。
+- 若腳本有需要設定帳號或密碼，必須使用 `GM_registerMenuCommand` 讓用戶可隨時開啟設定介面。
 - 如需偵測單頁應用 URL 變化，加入 `@grant window.onurlchange` 並監聽 `urlchange` 事件。
 
 ## 維護與發佈

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Eyny 自動登入腳本
 // @namespace    https://*.eyny.com/*
-// @version      1.0.3
+// @version      1.0.4
 // @description  自動填入帳號密碼並登入 Eyny 論壇，支援安全提問自動填答。
 // @author       KuoAnn
 // @match        https://*.eyny.com/*
@@ -10,6 +10,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_addValueChangeListener
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=www.eyny.com
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/Eyny.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/Eyny.user.js
@@ -17,21 +18,33 @@
 (function () {
     "use strict";
 
-    // 註冊 Tampermonkey 選單命令，設定帳號密碼
-    GM_registerMenuCommand("設定 Eyny 帳號", async function () {
-        const input = prompt("請輸入 Eyny 帳號：", await GM_getValue("eyny_user", ""));
-        if (input !== null) {
-            await GM_setValue("eyny_user", input);
-            alert("帳號已儲存！");
-        }
-    });
-    GM_registerMenuCommand("設定 Eyny 密碼", async function () {
-        const input = prompt("請輸入 Eyny 密碼：", await GM_getValue("eyny_pswd", ""));
-        if (input !== null) {
-            await GM_setValue("eyny_pswd", input);
-            alert("密碼已儲存！");
-        }
-    });
+    /**
+     * 顯示提示訊息（可擴充為自訂 UI）
+     * @param {string} msg 訊息內容
+     */
+    function showAlert(msg) {
+        alert(msg);
+    }
+
+    /**
+     * 註冊 Tampermonkey 選單命令，設定帳號密碼
+     */
+    function registerMenuCommands() {
+        GM_registerMenuCommand("設定 Eyny 帳號", async () => {
+            const input = prompt("請輸入 Eyny 帳號：", await GM_getValue("eyny_user", ""));
+            if (input !== null) {
+                await GM_setValue("eyny_user", input);
+                showAlert("帳號已儲存！");
+            }
+        });
+        GM_registerMenuCommand("設定 Eyny 密碼", async () => {
+            const input = prompt("請輸入 Eyny 密碼：", await GM_getValue("eyny_pswd", ""));
+            if (input !== null) {
+                await GM_setValue("eyny_pswd", input);
+                showAlert("密碼已儲存！");
+            }
+        });
+    }
 
     /**
      * 檢查帳號密碼是否已設定，若未設定則提示用戶
@@ -41,7 +54,7 @@
         const user = await GM_getValue("eyny_user", "");
         const pswd = await GM_getValue("eyny_pswd", "");
         if (!user || !pswd) {
-            alert("請先透過 Tampermonkey 選單設定帳密");
+            showAlert("請先透過 Tampermonkey 選單設定帳密");
             return false;
         }
         return true;
@@ -76,6 +89,7 @@
 
     /**
      * 填寫登入表單並自動送出
+     * 強化錯誤處理，避免重複 alert
      */
     async function fillForm() {
         try {
@@ -106,16 +120,17 @@
                     loginButton.click();
                 } catch (err) {
                     console.error("登入表單送出失敗:", err);
-                    alert("登入表單送出失敗: " + err.message);
+                    showAlert("登入表單送出失敗: " + err.message);
                 }
             }, 1000);
         } catch (err) {
             console.error("填寫登入表單失敗:", err);
-            alert("填寫登入表單失敗: " + err.message);
+            showAlert("填寫登入表單失敗: " + err.message);
         }
     }
 
     // 主流程
+    registerMenuCommands();
     (async function main() {
         if (window.location.href.includes("member.php?mod=logging")) {
             if (!(await isCredentialSet())) return;
