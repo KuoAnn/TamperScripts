@@ -330,7 +330,7 @@ const alert = (text, type = "", timeout = 3333) => {
             await GM_setValue(title, JSON.stringify(mergedData));
             await GM_setValue("quizTime", Date.now());
 
-            alert("小抄已就緒", "", 10000);
+            alert(`小抄已就緒 (${Object.keys(data).length}/${Object.keys(mergedData).length})`, "", 10000);
         } catch (e) {
             logError("儲存答案時發生錯誤", e);
         }
