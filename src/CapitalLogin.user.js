@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Capital Login
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  try to take over the world!
 // @author       KuoAnn
 // @match        https://tradeweb.capital.com.tw/
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=https://www.capitalfund.com.tw/
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CapitalLogin.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CapitalLogin.user.js
-// @connect      maxbot.dropboxlike.com
+// @connect      *
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_addElement
@@ -35,7 +35,7 @@ const ACCOUNT = "";
 const PASSWORD = "";
 
 // 系統參數
-const CAPTCHA_API_URL = "http://maxbot.dropboxlike.com:16888/ocr";
+const CAPTCHA_API_URL = "https://asia-east1-futureminer.cloudfunctions.net/ocr";
 const CAPTCHA_INPUT_SELECTOR = "#validateCode";
 const CAPTCHA_IMAGE_SELECTOR = "#imgCode";
 const CAPTCHA_REFRESH_SELECTOR = "#imgCode";

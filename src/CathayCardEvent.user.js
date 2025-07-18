@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name         Cathay card event register
+// @name         國泰信用卡活動自動登錄
 // @namespace    https://www.cathaybk.com.tw/promotion/CreditCard/Event
-// @version      1.0.7
+// @version      1.0.8
 // @description  自動參加國泰信用卡登錄活動，填入個人資訊並自動辨識驗證碼。
 // @author       KuoAnn
 // @match        https://www.cathaybk.com.tw/promotion*
-// @connect      maxbot.dropboxlike.com
+// @connect      *
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=https://www.cathaybk.com.tw%2fcathaybk
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
@@ -21,7 +21,7 @@ GM_addStyle(`
 
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
-function alert(str, timeout = 3000) {
+alert = (str, timeout = 3000) => {
     const msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: str });
     alertMQ.push(msg);
     if (alertMQ.length > 10) {
@@ -31,14 +31,14 @@ function alert(str, timeout = 3000) {
     setTimeout(() => {
         if (alertDiv.contains(msg)) alertDiv.removeChild(msg);
     }, timeout);
-}
+};
 
 // 個人參數
 const USER_ID_KEY = "userId";
 const USER_BIRTH_KEY = "userBirth";
 
 // 系統參數
-const CAPTCHA_API_URL = "http://maxbot.dropboxlike.com:16888/ocr";
+const CAPTCHA_API_URL = "https://asia-east1-futureminer.cloudfunctions.net/ocr";
 const CAPTCHA_INPUT_SELECTOR = "#Captcha";
 const CAPTCHA_IMAGE_SELECTOR = "#captchaIcon";
 const CAPTCHA_REFRESH_SELECTOR = "#captcha-refresh";
@@ -117,6 +117,11 @@ let _isLoaded = false;
 
     // 辨識驗證碼並送出
     function setCaptchaAndSubmit(image_data, inputSelector) {
+        console.log("辨識驗證碼中...");
+        if (!image_data) {
+            console.error("驗證碼圖片資料為空");
+            return;
+        }
         GM_xmlhttpRequest({
             method: "POST",
             url: CAPTCHA_API_URL,
@@ -203,7 +208,7 @@ let _isLoaded = false;
             error: function (xhr) {
                 if (xhr.status === 401) {
                     alert("error: xhr=401");
-                } else if (typeof IsHotTime !== 'undefined' && IsHotTime) {
+                } else if (typeof IsHotTime !== "undefined" && IsHotTime) {
                     alert("error: Rush Hour");
                 } else {
                     alert("error: Busy");
@@ -211,5 +216,4 @@ let _isLoaded = false;
             },
         });
     }
-
 })();

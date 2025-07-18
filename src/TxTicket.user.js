@@ -1,13 +1,12 @@
 // ==UserScript==
 // @name         TxTicket
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
+// @version      1.0.7
 // @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數
 // @author       KuoAnn
 // @match        https://tixcraft.com/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=tixcraft.com
-// @connect      maxbot.dropboxlike.com
-// @connect      asia-east1-futureminer.cloudfunctions.net
+// @connect      *
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/TxTicket.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/TxTicket.user.js
 // @grant        GM_xmlhttpRequest
@@ -371,7 +370,6 @@ if (triggerUrl.includes("activity/detail/")) {
 
             try {
                 _isGetCaptcha = false;
-                getCaptcha("http://maxbot.dropboxlike.com:16888/ocr", image_data);
                 getCaptcha("https://asia-east1-futureminer.cloudfunctions.net/ocr", image_data);
 
                 console.log("Preheat_ocr");
@@ -399,7 +397,6 @@ if (triggerUrl.includes("activity/detail/")) {
             if (image_data) {
                 try {
                     _isGetCaptcha = false;
-                    getCaptcha("http://maxbot.dropboxlike.com:16888/ocr", image_data);
                     getCaptcha("https://asia-east1-futureminer.cloudfunctions.net/ocr", image_data);
                 } catch (error) {
                     console.error("Error:", error);
