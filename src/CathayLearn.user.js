@@ -2,12 +2,15 @@
 // @name         國泰自我學習網
 // @namespace    http://tampermonkey.net/
 // @source       https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Cathay-Learn.user.js
-// @version      1.1.1
+// @version      1.1.2
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
 // @connect      *
 // @grant        GM_addStyle
 // @grant        GM_addElement
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_addValueChangeListener
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayLearn.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayLearn.user.js
 // @icon         https://www.cathaysec.com.tw/cathaysec/assets/img/home/news_icon_csc.png
@@ -147,8 +150,35 @@ const alert = (text, type = "", timeout = 3333) => {
         alert("開始上課");
     }
 
+    /**
+     * 設定元素樣式
+     * @param {Element} element
+     * @param {Object} styles
+     */
     function setStyles(element, styles) {
         Object.assign(element.style, styles);
+    }
+
+    /**
+     * 統一 alert 行為
+     * @param {string} text
+     * @param {string} [type]
+     * @param {number} [timeout]
+     */
+    function showAlert(text, type = "", timeout = 3333) {
+        let $msg;
+        if (type === "error") {
+            $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:red", textContent: text });
+        } else {
+            console.log(text);
+            $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: text });
+        }
+        alertMQ.push($msg);
+        if (alertMQ.length > 10) {
+            const old = alertMQ.shift();
+            alertDiv.contains(old) && alertDiv.removeChild(old);
+        }
+        setTimeout(() => alertDiv.contains($msg) && alertDiv.removeChild($msg), timeout);
     }
 
     function waitToNextPage() {
@@ -168,6 +198,14 @@ const alert = (text, type = "", timeout = 3333) => {
     }
 
     function goToNextPage() {
+        setTimeout(() => {
+            // 換頁前等待 3 秒讓課程紀錄(假設有)有時間可發送出去
+            const iframeBanner = document.querySelector("iframe#banner");
+            if (iframeBanner?.contentWindow?.document) {
+                const buttons = iframeBanner.contentWindow.document.querySelectorAll("button");
+                if (buttons.length > 0) buttons[buttons.length - 1].click();
+            }
+        }, 3000);
         const iframeBanner = document.querySelector("iframe#banner");
         if (iframeBanner?.contentWindow?.document) {
             const buttons = iframeBanner.contentWindow.document.querySelectorAll("button");
@@ -220,146 +258,170 @@ const alert = (text, type = "", timeout = 3333) => {
         writeAnswerButton.addEventListener("click", writeAnswers);
     }
 
+    /**
+     * 統一錯誤提示與日誌
+     * @param {string} msg - 顯示訊息
+     * @param {Error|string} [err] - 錯誤物件或訊息
+     */
+    function logError(msg, err) {
+        alert(msg, "error");
+        if (err) {
+            console.error(`[CathayLearn] ${msg}`, err);
+        } else {
+            console.error(`[CathayLearn] ${msg}`);
+        }
+    }
+
     // 儲存答案功能
-    function saveAnswers() {
-        const title = "quiz";
-        const resultContainer = tryGetElements("ctms-feedback-result");
-        if (!resultContainer || resultContainer?.length === 0) {
-            alert("找不到答案頁面，請確認是否已完成測驗");
-            return;
-        }
-        const questionDivs = resultContainer[0].querySelectorAll("div.p-8.mat-pink-50");
-        const data = {};
-        if (questionDivs.length === 0) {
-            alert("找不到答案，請確認【檢視我的答案】頁籤是否已切至【全部】");
-            return;
-        }
-
-        questionDivs.forEach((qDiv, qi) => {
-            const qIndex = qi + 1;
-            const qTextElem = qDiv.querySelector("h3");
-            const qKey = qTextElem ? qTextElem.innerText.trim() : `第${qIndex}題`;
-            const rows = qDiv.querySelectorAll('form [fxlayout="row"]');
-            const ansArr = [];
-            rows.forEach((row) => {
-                if (row.querySelector("mat-icon.fa-check-circle")) {
-                    const ansText = (row.querySelector(".mat-checkbox-label, .mat-radio-label-content")?.textContent || "").trim();
-                    ansArr.push(ansText);
-                }
-            });
-            console.log(`${qKey} > ${ansArr.map((ansText) => `${ansText}`).join(", ")}`);
-            data[qKey] = ansArr;
-        });
-
-        // 讀取現有資料，若存在且在一小時內更新過，則合併，否則使用新資料
-        let existingData = {};
+    async function saveAnswers() {
         try {
-            const existingDataStr = localStorage.getItem(title);
-            if (existingDataStr) {
-                const storageData = JSON.parse(existingDataStr);
-                const quizTime = localStorage.getItem("quizTime") ? parseInt(localStorage.getItem("quizTime")) : 0;
-                const currentTime = Date.now();
-                const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
-
-                // 檢查時間戳記是否在一小時內
-                if (currentTime - quizTime <= oneHourInMs) {
-                    existingData = storageData;
-                }
+            const title = "quiz";
+            const resultContainer = tryGetElements("ctms-feedback-result");
+            if (!resultContainer || resultContainer?.length === 0) {
+                alert("找不到答案頁面，請確認是否已完成測驗");
+                return;
             }
+            const questionDivs = resultContainer[0].querySelectorAll("div.p-8.mat-pink-50");
+            const data = {};
+            if (questionDivs.length === 0) {
+                alert("找不到答案，請確認【檢視我的答案】頁籤是否已切至【全部】");
+                return;
+            }
+
+            questionDivs.forEach((qDiv, qi) => {
+                const qIndex = qi + 1;
+                const qTextElem = qDiv.querySelector("h3");
+                const qKey = qTextElem ? qTextElem.innerText.trim() : `第${qIndex}題`;
+                const rows = qDiv.querySelectorAll('form [fxlayout="row"]');
+                const ansArr = [];
+                rows.forEach((row) => {
+                    if (row.querySelector("mat-icon.fa-check-circle")) {
+                        const ansText = (row.querySelector(".mat-checkbox-label, .mat-radio-label-content")?.textContent || "").trim();
+                        ansArr.push(ansText);
+                    }
+                });
+                console.log(`${qKey} > ${ansArr.map((ansText) => `${ansText}`).join(", ")}`);
+                data[qKey] = ansArr;
+            });
+
+            // 讀取現有資料，若存在且在一小時內更新過，則合併，否則使用新資料
+            let existingData = {};
+            try {
+                const existingDataStr = await GM_getValue(title, "{}");
+                if (existingDataStr) {
+                    const storageData = JSON.parse(existingDataStr);
+                    const quizTime = await GM_getValue("quizTime", 0);
+                    const currentTime = Date.now();
+                    const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
+
+                    // 檢查時間戳記是否在一小時內
+                    if (currentTime - quizTime <= oneHourInMs) {
+                        existingData = storageData;
+                    }
+                }
+            } catch (e) {
+                logError("小抄題庫異常", e);
+            }
+
+            // 合併新舊資料，以新資料為優先
+            const mergedData = { ...existingData, ...data };
+
+            // 儲存資料和時間戳記
+            await GM_setValue(title, JSON.stringify(mergedData));
+            await GM_setValue("quizTime", Date.now());
+
+            alert("小抄已就緒", "", 10000);
         } catch (e) {
-            alert("小抄題庫異常", "error");
+            logError("儲存答案時發生錯誤", e);
         }
-
-        // 合併新舊資料，以新資料為優先
-        const mergedData = { ...existingData, ...data };
-
-        // 儲存資料和時間戳記
-        localStorage.setItem(title, JSON.stringify(mergedData));
-        localStorage.setItem("quizTime", Date.now().toString());
-
-        alert("小抄已就緒", "", 10000);
     }
 
     // 讀取、標示、抄寫答案
-    function writeAnswers() {
-        const dataStr = localStorage.getItem("quiz");
-        const quizTimeStr = localStorage.getItem("quizTime");
-
-        if (!dataStr) {
-            alert("找不到小抄");
-            return;
-        }
-
-        // 檢查時間是否有效（小於一小時）
-        const quizTime = quizTimeStr ? parseInt(quizTimeStr) : 0;
-        const currentTime = Date.now();
-        const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
-
-        if (currentTime - quizTime > oneHourInMs) {
-            alert("小抄已過期（超過1小時），請重新製作小抄");
-            localStorage.removeItem("quiz");
-            localStorage.removeItem("quizTime");
-            return;
-        }
-
-        let quizAnswers;
+    async function writeAnswers() {
         try {
-            quizAnswers = JSON.parse(dataStr);
-        } catch (e) {
-            alert(`看不懂小抄 ${e.message}`, "error");
-            return;
-        }
+            const dataStr = await GM_getValue("quiz", "");
+            const quizTime = await GM_getValue("quizTime", 0);
 
-        const resultContainer = tryGetElements("mat-card-content")[0];
-        if (!resultContainer) {
-            alert("找不到題目");
-            return;
-        }
-        const qDivs = resultContainer.querySelectorAll('[id^="question-"]');
-        qDivs.forEach((qDiv) => {
-            const h3 = qDiv.querySelectorAll("h3");
-            if (!h3 || h3?.length != 2) return;
-            const questionText = h3[1].innerText.replace(/^\d+\.\s*/, "").trim();
-            const answers = quizAnswers[questionText];
-            if (!answers) return;
-            answers.forEach((answerText) => {
-                const label = Array.from(qDiv.querySelectorAll("label")).find((l) => l.textContent.trim() === answerText);
-                if (!label) return;
-                const input = qDiv.querySelector(`#${label.getAttribute("for")}`);
-                if (!input) return;
+            if (!dataStr) {
+                alert("找不到小抄");
+                return;
+            }
 
-                if (!input.checked) {
-                    label.click();
-                    input.dispatchEvent(new Event("input", { bubbles: true }));
-                    input.dispatchEvent(new Event("change", { bubbles: true }));
-                }
-                label.style.backgroundColor = "yellow";
+            // 檢查時間是否有效（小於一小時）
+            const currentTime = Date.now();
+            const oneHourInMs = 60 * 60 * 1000; // 1小時的毫秒數
+
+            if (currentTime - quizTime > oneHourInMs) {
+                alert("小抄已過期（超過1小時），請重新製作小抄");
+                await GM_setValue("quiz", "");
+                await GM_setValue("quizTime", 0);
+                return;
+            }
+
+            let quizAnswers;
+            try {
+                quizAnswers = JSON.parse(dataStr);
+            } catch (e) {
+                alert(`看不懂小抄 ${e.message}`, "error");
+                return;
+            }
+
+            const resultContainer = tryGetElements("mat-card-content")[0];
+            if (!resultContainer) {
+                alert("找不到題目");
+                return;
+            }
+            const qDivs = resultContainer.querySelectorAll('[id^="question-"]');
+            qDivs.forEach((qDiv) => {
+                const h3 = qDiv.querySelectorAll("h3");
+                if (!h3 || h3?.length != 2) return;
+                const questionText = h3[1].innerText.replace(/^\d+\.\s*/, "").trim();
+                const answers = quizAnswers[questionText];
+                if (!answers) return;
+                answers.forEach((answerText) => {
+                    const label = Array.from(qDiv.querySelectorAll("label")).find((l) => l.textContent.trim() === answerText);
+                    if (!label) return;
+                    const input = qDiv.querySelector(`#${label.getAttribute("for")}`);
+                    if (!input) return;
+
+                    if (!input.checked) {
+                        label.click();
+                        input.dispatchEvent(new Event("input", { bubbles: true }));
+                        input.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                    label.style.backgroundColor = "yellow";
+                });
             });
-        });
-        alert("已自動作答並標示");
+            alert("已自動作答並標示");
+        } catch (e) {
+            logError("自動作答失敗", e);
+        }
     }
 
+    /**
+     * 取得最深層 iframe 的 document
+     * @param {Document} doc
+     * @param {string[]} iframeSelectors
+     * @returns {Document}
+     */
+    function getDeepestDocument(doc, iframeSelectors = ["iframe#content", "iframe#playContent", "iframe#Content"]) {
+        if (!doc || iframeSelectors.length === 0) return doc;
+        const iframeSelector = iframeSelectors[0];
+        const iframe = doc.querySelector(iframeSelector);
+        if (!iframe) return doc;
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!iframeDoc) return doc;
+        return getDeepestDocument(iframeDoc, iframeSelectors.slice(1));
+    }
+
+    /**
+     * 取得指定 selector 的元素
+     * @param {string} selector
+     * @returns {NodeList|null|string}
+     */
     function tryGetElements(selector) {
         try {
             console.log("[tryGetElements] selector:", selector);
-            const getDeepestDocument = (doc, iframeSelectors = ["iframe#content", "iframe#playContent", "iframe#Content"]) => {
-                if (!doc || iframeSelectors.length === 0) return doc;
-
-                const iframeSelector = iframeSelectors[0];
-                const iframe = doc.querySelector(iframeSelector);
-
-                if (!iframe) {
-                    return doc;
-                }
-
-                const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-                if (!iframeDoc) {
-                    return doc;
-                }
-
-                return getDeepestDocument(iframeDoc, iframeSelectors.slice(1));
-            };
-
             const deepestDoc = getDeepestDocument(document);
             const elements = deepestDoc.querySelectorAll(selector);
             return elements?.length > 0 ? elements : null;
@@ -367,21 +429,28 @@ const alert = (text, type = "", timeout = 3333) => {
             if (error.name == "SecurityError") {
                 return "CORS";
             }
-
-            alert(`[tryGetElements] error: ${error.message}`, "error");
-            console.error(`[tryGetElements] error:`, error);
-
+            logError(`[tryGetElements] error: ${error.message}`, error);
             return null;
         }
     }
 
+    /**
+     * 依文字取得按鈕
+     * @param {string} text
+     * @returns {Element|null}
+     */
     function tryGetButtonByText(text) {
         const buttons = tryGetElements("button");
         if (!buttons || buttons.length === 0) return null;
-
         return Array.from(buttons).find((btn) => btn.innerText.includes(text)) || null;
     }
 
+    /**
+     * 嘗試自動點擊指定文字的按鈕
+     * @param {string} buttonText
+     * @param {Function} nextFunc
+     * @param {number} retryCount
+     */
     function tryClickButton(buttonText, nextFunc, retryCount = 10) {
         const clickWithDelay = (btn) => {
             alert(`找到按鈕 "${buttonText}"，將在 1 秒後自動點擊`);
