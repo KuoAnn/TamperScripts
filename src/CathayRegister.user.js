@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         大家來報報 輔助報名
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @author       KuoAnn
 // @description  自動勾選同意條款並取得申請資訊，強化錯誤處理與安全性
 // @match        https://agent2.cathaylife.com.tw/PDAC/
