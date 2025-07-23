@@ -30,7 +30,7 @@ GM_addStyle(`
   `);
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
-const alert = (text, type = "", timeout = 6666) => {
+const pageAlert = (text, type = "", timeout = 6666) => {
     let $msg;
     if (type === "error") {
         $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:red", textContent: text });
@@ -39,7 +39,7 @@ const alert = (text, type = "", timeout = 6666) => {
         $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: text });
     }
     alertMQ.push($msg);
-    if (alertMQ.length > 10) {
+    if (alertMQ.length > 15) {
         const old = alertMQ.shift();
         alertDiv.contains(old) && alertDiv.removeChild(old);
     }
@@ -69,7 +69,7 @@ const alert = (text, type = "", timeout = 6666) => {
                 checkbox.dispatchEvent(new Event("change", { bubbles: true }));
             }
         } catch (err) {
-            alert("[checkAgreementBox] 執行失敗", "error");
+            pageAlert("[checkAgreementBox] 執行失敗", "error");
             console.error("[checkAgreementBox] 執行失敗", err);
         }
     }
@@ -86,11 +86,11 @@ const alert = (text, type = "", timeout = 6666) => {
             if (match && match[1]) {
                 return match[1];
             }
-            alert("[getActNoFromUrl] 無法取得 act_no，請確認 URL 格式", "error");
+            pageAlert("[getActNoFromUrl] 無法取得 act_no，請確認 URL 格式", "error");
             console.warn("[getActNoFromUrl] 無法取得 act_no，hash:", hash);
             return null;
         } catch (err) {
-            alert("[getActNoFromUrl] 執行失敗", "error");
+            pageAlert("[getActNoFromUrl] 執行失敗", "error");
             console.error("[getActNoFromUrl] 執行失敗", err);
             return null;
         }
@@ -105,7 +105,7 @@ const alert = (text, type = "", timeout = 6666) => {
     function fetchApplyInfo() {
         const actNo = getActNoFromUrl();
         if (!actNo) {
-            alert("[fetchApplyInfo] 無法取得 act_no，略過 API 呼叫", "error");
+            pageAlert("[fetchApplyInfo] 無法取得 act_no，略過 API 呼叫", "error");
             console.warn("[fetchApplyInfo] actNo 不存在，略過 API 呼叫");
             return;
         }
@@ -113,11 +113,11 @@ const alert = (text, type = "", timeout = 6666) => {
             .then((data) => {
                 const queNo = data?.que_no || 0;
                 const url = `https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC12/checkApply?act_no=${actNo}&que_no=${queNo}`;
-                alert(`[checkApply] 查詢報名資訊 act_no=${actNo}&que_no=${queNo}`);
+                pageAlert(`[checkApply] 查詢報名資訊 act_no=${actNo}&que_no=${queNo}`);
                 return sendCheckApplyRequest(url);
             })
             .catch((err) => {
-                alert("[fetchApplyInfo] 問卷資料查詢失敗", "error");
+                pageAlert("[fetchApplyInfo] 問卷資料查詢失敗", "error");
                 console.error("[fetchApplyInfo] 問卷資料查詢失敗", err);
             });
     }
@@ -135,12 +135,12 @@ const alert = (text, type = "", timeout = 6666) => {
                 headers: { Accept: "application/json" },
                 onload: handleCheckApplyResponse,
                 onerror: function (err) {
-                    alert("[fetchApplyInfo] API 請求失敗", "error");
+                    pageAlert("[fetchApplyInfo] API 請求失敗", "error");
                     console.error("[fetchApplyInfo] API 請求失敗", err);
                 },
             });
         } catch (err) {
-            alert("[fetchApplyInfo] GM_xmlhttpRequest 執行失敗", "error");
+            pageAlert("[fetchApplyInfo] GM_xmlhttpRequest 執行失敗", "error");
             console.error("[fetchApplyInfo] GM_xmlhttpRequest 執行失敗", err);
         }
     }
@@ -153,7 +153,7 @@ const alert = (text, type = "", timeout = 6666) => {
     function handleCheckApplyResponse(response) {
         try {
             if (!response || typeof response.responseText !== "string") {
-                alert("[fetchApplyInfo] API 回應為空或格式錯誤", "error");
+                pageAlert("[fetchApplyInfo] API 回應為空或格式錯誤", "error");
                 console.error("[fetchApplyInfo] API 回應為空或格式錯誤");
                 return;
             }
@@ -162,11 +162,11 @@ const alert = (text, type = "", timeout = 6666) => {
                 applyInfoFetched = true;
                 console.log("[fetchApplyInfo] 申請資訊:", json);
             } else {
-                alert("[fetchApplyInfo] 回應格式非預期", "error");
+                pageAlert("[fetchApplyInfo] 回應格式非預期", "error");
                 console.warn("[fetchApplyInfo] 回應格式非預期:", response.responseText);
             }
         } catch (e) {
-            alert("[fetchApplyInfo] 回應解析失敗", "error");
+            pageAlert("[fetchApplyInfo] 回應解析失敗", "error");
             console.error("[fetchApplyInfo] 回應解析失敗", e, response && response.responseText);
         }
     }
@@ -181,7 +181,7 @@ const alert = (text, type = "", timeout = 6666) => {
             if (!actNo) return resolve(null);
             // 直接查詢 API
             const url = `https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC06/getQuestionnaireData?act_no=${actNo}`;
-            alert(`[getQuestionnaireData] 查詢問卷 act_no=${actNo}`);
+            pageAlert(`[getQuestionnaireData] 查詢問卷 act_no=${actNo}`);
             GM_xmlhttpRequest({
                 method: "GET",
                 url,
@@ -189,7 +189,7 @@ const alert = (text, type = "", timeout = 6666) => {
                 onload: function (response) {
                     try {
                         if (!response || typeof response.responseText !== "string") {
-                            alert("[fetchQuestionnaireData] API 回應為空或格式錯誤", "error");
+                            pageAlert("[fetchQuestionnaireData] API 回應為空或格式錯誤", "error");
                             console.error("[fetchQuestionnaireData] API 回應為空或格式錯誤");
                             resolve(null);
                             return;
@@ -198,18 +198,18 @@ const alert = (text, type = "", timeout = 6666) => {
                         if (json && json.returnCode === 0 && Array.isArray(json.data) && json.data.length > 0) {
                             resolve(json.data[0]);
                         } else {
-                            alert("[fetchQuestionnaireData] 回應格式非預期", "error");
+                            pageAlert("[fetchQuestionnaireData] 回應格式非預期", "error");
                             console.warn("[fetchQuestionnaireData] 回應格式非預期:", response.responseText);
                             resolve(null);
                         }
                     } catch (e) {
-                        alert("[fetchQuestionnaireData] 回應解析失敗", "error");
+                        pageAlert("[fetchQuestionnaireData] 回應解析失敗", "error");
                         console.error("[fetchQuestionnaireData] 回應解析失敗", e, response && response.responseText);
                         resolve(null);
                     }
                 },
                 onerror: function (err) {
-                    alert("[fetchQuestionnaireData] API 請求失敗", "error");
+                    pageAlert("[fetchQuestionnaireData] API 請求失敗", "error");
                     console.error("[fetchQuestionnaireData] API 請求失敗", err);
                     resolve(null);
                 },
@@ -236,10 +236,81 @@ const alert = (text, type = "", timeout = 6666) => {
                 if (!applyInfoFetched) fetchApplyInfo();
             }, 120);
         } catch (err) {
-            alert("[observerCallback] 執行失敗", "error");
+            pageAlert("[observerCallback] 執行失敗", "error");
             console.error("[observerCallback] 執行失敗", err);
         }
     }
+
+    // === 搶課按鈕與互動 ===
+    let robotTimer = null;
+    let robotTargetTime = null;
+    let robotKeywords = "";
+    const robotBtn = GM_addElement(document.body, "button", {
+        class: "cathay-btn cathay-btn-check",
+        style: "bottom:20px;right:20px;left:auto;top:auto;background:#4CAF50;min-width:100px;",
+        textContent: "🤖 搶課",
+    });
+
+    function showPromptAndValidate() {
+        // 1. 輸入報名時間
+        let timeStr = "";
+        while (true) {
+            timeStr = prompt("請輸入報名時間 (格式: HHmm，例如 0930 代表上午9:30)\n請勿輸入冒號或其他符號。", "");
+            if (timeStr === null) return false; // 使用者取消
+            if (/^\d{4}$/.test(timeStr)) {
+                const hh = parseInt(timeStr.slice(0,2),10);
+                const mm = parseInt(timeStr.slice(2,4),10);
+                if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) break;
+            }
+            pageAlert("格式錯誤！請輸入4位數字 (HHmm)，如 0930 代表上午9:30。", "error");
+        }
+        // 2. 輸入關鍵字
+        let keywords = "";
+        while (true) {
+            keywords = prompt(
+                "請輸入搶課順序關鍵字（多個以逗號分隔，空白作為'且'的邏輯子），若都沒有的話則預設搶第一個\n\nEx: '正取 上午,正取,備取'\n1. 先搶有出現'正取'及'上午'文字的課程\n2. 依次搶'正取','備取'\n都沒有則搶第一個",
+                ""
+            );
+            if (keywords === null) return false;
+            break;;
+        }
+        robotKeywords = keywords;
+        // 計算目標時間
+        const now = new Date();
+        const target = new Date(now);
+        target.setHours(parseInt(timeStr.slice(0,2),10), parseInt(timeStr.slice(2,4),10), 0, 0);
+        // 若目標時間已過，則自動加一天
+        if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+        robotTargetTime = target;
+        startCountdown();
+        return true;
+    }
+
+    function startCountdown() {
+        if (robotTimer) clearInterval(robotTimer);
+        updateBtnCountdown();
+        robotTimer = setInterval(updateBtnCountdown, 1000);
+    }
+    function updateBtnCountdown() {
+        if (!robotTargetTime) return;
+        const now = new Date();
+        let diff = Math.floor((robotTargetTime.getTime() - now.getTime()) / 1000);
+        if (diff < 0) diff = 0;
+        robotBtn.textContent = `🚀 倒數 ${diff} 秒`;
+        robotBtn.style.backgroundColor = "#f44336";
+        if (diff === 0 && robotTimer) {
+            clearInterval(robotTimer);
+            robotBtn.textContent = '🤖 搶課';
+            pageAlert('倒數結束，開始自動搶課！\n關鍵字: ' + robotKeywords);
+            autoRegister();
+        }
+    }
+    robotBtn.addEventListener("click", () => {
+        observer.disconnect(); // 停止監聽
+        if (robotTimer) clearInterval(robotTimer);
+        robotBtn.textContent = "🤖 搶課";
+        showPromptAndValidate();
+    });
 
     const observer = new MutationObserver(observerCallback);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -247,4 +318,112 @@ const alert = (text, type = "", timeout = 6666) => {
     // 初始執行一次
     checkAgreementBox();
     fetchApplyInfo();
+
+    function matchSessionByKeywords(sessions, keywords) {
+        if (!Array.isArray(sessions) || sessions.length === 0) return null;
+        if (!keywords) return sessions[0];
+        const keywordGroups = keywords.split(',').map(k => k.trim().split(/\s+/));
+        for (const group of keywordGroups) {
+            const found = sessions.find(s => group.every(kw => s.act_show_nm.includes(kw)));
+            if (found) return found;
+        }
+        return sessions[0];
+    }
+
+    function autoRegister() {
+        const actNo = getActNoFromUrl();
+        if (!actNo) {
+            pageAlert('[autoRegister] 無法取得 act_no', 'error');
+            return;
+        }
+        fetchQuestionnaireData(actNo).then((data) => {
+            const queNo = data?.que_no || 0;
+            const url = `https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC12/checkApply?act_no=${actNo}&que_no=${queNo}`;
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                headers: { Accept: 'application/json' },
+                onload: function (response) {
+                    try {
+                        const json = JSON.parse(response.responseText);
+                        if (json.returnCode === 0 && json.data && Array.isArray(json.data.sessions) && json.data.sessions.length > 0) {
+                            if (json.data.ansQueNo) {
+                                pageAlert('[autoRegister] 需填問卷，進入手動流程');
+                                manualRegister();
+                                return;
+                            }
+                            const session = matchSessionByKeywords(json.data.sessions, robotKeywords);
+                            if (!session) {
+                                pageAlert('[autoRegister] 無可用課程', 'error');
+                                manualRegister();
+                                return;
+                            }
+                            const postData = {
+                                ansStr: '',
+                                que_no: queNo,
+                                session_check: session.act_show_no,
+                                act_no: actNo + ''
+                            };
+                            GM_xmlhttpRequest({
+                                method: 'POST',
+                                url: 'https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC12/saveSignUp',
+                                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                                data: JSON.stringify(postData),
+                                onload: function (res) {
+                                    try {
+                                        const r = JSON.parse(res.responseText);
+                                        if (r.returnCode === 0) {
+                                            pageAlert('[autoRegister] 報名成功！' + (r.data || ''));
+                                            // 報名成功後自動點擊「課程查詢」按鈕
+                                            const queryBtn = Array.from(document.querySelectorAll('a')).find(a => {
+                                                const span = a.querySelector('span');
+                                                return span && span.textContent.trim() === '課程查詢';
+                                            });
+                                            if (queryBtn) {
+                                                queryBtn.click();
+                                                pageAlert('[autoRegister] 已自動點擊「課程查詢」按鈕');
+                                            } else {
+                                                pageAlert('[autoRegister] 找不到「課程查詢」按鈕', 'error');
+                                            }
+                                        } else {
+                                            pageAlert(`[autoRegister] 報名失敗: ${r.msg || ''}`,'error');
+                                            manualRegister();
+                                        }
+                                    } catch (e) {
+                                        pageAlert('[autoRegister] 報名回應解析失敗', 'error');
+                                        manualRegister();
+                                    }
+                                },
+                                onerror: function () {
+                                    pageAlert('[autoRegister] 報名 API 請求失敗', 'error');
+                                    manualRegister();
+                                }
+                            });
+                        } else {
+                            pageAlert('[autoRegister] 無可報名課程', 'error');
+                            manualRegister();
+                        }
+                    } catch (e) {
+                        pageAlert('[autoRegister] checkApply 回應解析失敗', 'error');
+                        manualRegister();
+                    }
+                },
+                onerror: function () {
+                    pageAlert('[autoRegister] checkApply API 請求失敗', 'error');
+                    manualRegister();
+                }
+            });
+        });
+    }
+
+    function manualRegister() {
+        // 自動點擊「我要報名」按鈕
+        const btn = Array.from(document.querySelectorAll('a')).find(a => a.textContent && a.textContent.includes('我要報名'));
+        if (btn) {
+            btn.click();
+            pageAlert('[manualRegister] 已自動點擊「我要報名」按鈕');
+        } else {
+            pageAlert('[manualRegister] 找不到「我要報名」按鈕', 'error');
+        }
+    }
 })();
