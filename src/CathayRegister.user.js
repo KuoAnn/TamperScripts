@@ -29,9 +29,6 @@
     let debounceTimer = null;
     let lastUrl = window.location.href;
 
-    // act_no_data 快取 map，使用 GM_setValue/GM_getValue
-    const ACTNO_CACHE_KEY = 'act_no_data';
-
     /**
      * 勾選同意條款 checkbox，並處理例外狀況
      * @returns {void}
@@ -121,20 +118,14 @@
     }
 
     /**
-     * 取得問卷資料，快取於 GM_setValue
+     * 取得問卷資料，直接查詢 API
      * @param {string} actNo 活動編號
      * @returns {Promise<object|null>} 回傳 data 物件或 null
      */
     function fetchQuestionnaireData(actNo) {
         return new Promise((resolve) => {
             if (!actNo) return resolve(null);
-            // 先檢查快取（同步取得值）
-            const cache = GM_getValue(ACTNO_CACHE_KEY, {});
-            if (cache && cache[actNo]) {
-                resolve(cache[actNo]);
-                return;
-            }
-            // 無快取則查詢 API
+            // 直接查詢 API
             const url = `https://agent2.cathaylife.com.tw/PDAC/api/DTPDAC06/getQuestionnaireData?act_no=${actNo}`;
             console.info(`[fetchQuestionnaireData] 查詢問卷 API: ${url}`);
             GM_xmlhttpRequest({
@@ -150,10 +141,6 @@
                         }
                         const json = JSON.parse(response.responseText);
                         if (json && json.returnCode === 0 && Array.isArray(json.data) && json.data.length > 0) {
-                            // 快取資料（同步取得舊值，然後同步設定新值）
-                            const oldCache = GM_getValue(ACTNO_CACHE_KEY, {});
-                            const newCache = { ...oldCache, [actNo]: json.data[0] };
-                            GM_setValue(ACTNO_CACHE_KEY, newCache);
                             resolve(json.data[0]);
                         } else {
                             console.warn('[fetchQuestionnaireData] 回應格式非預期:', response.responseText);
