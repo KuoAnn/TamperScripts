@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         大家來報報 輔助報名
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @author       KuoAnn
 // @description  自動勾選同意條款並取得申請資訊，強化錯誤處理與安全性
 // @match        https://agent2.cathaylife.com.tw/PDAC/
@@ -188,7 +188,15 @@ const pageAlert = (text, type = "", ...otherMsgs) => {
                             return;
                         }
                         const json = JSON.parse(response.responseText);
-                        if (json && json.returnCode === 0 && Array.isArray(json.data) && json.data.length > 0) {
+                        if (json && json.returnCode === 0 && Array.isArray(json.data)) {
+                            if (json.data.length == 0) {
+                                pageAlert("[fetchQuestionnaireData] 查無問券", "error", response.responseText);
+                                resolve(null);
+                                return;
+                            }
+                            if (json.data[0].que_no) {
+                                pageAlert("[fetchQuestionnaireData] 問券編號: " + json.data[0].que_no);
+                            }
                             resolve(json.data[0]);
                         } else {
                             pageAlert("[fetchQuestionnaireData] 回應格式非預期", "error", response.responseText);
@@ -215,10 +223,10 @@ const pageAlert = (text, type = "", ...otherMsgs) => {
         try {
             // 檢查是否僅有 alertMessage 變動
             if (mutationsList && Array.isArray(mutationsList)) {
-                const onlyAlert = mutationsList.every(m =>
-                    Array.from(m.addedNodes).concat(Array.from(m.removedNodes)).every(
-                        n => n.nodeType === 1 && n.matches && n.matches('.alertMessage[data-alert="1"]')
-                    )
+                const onlyAlert = mutationsList.every((m) =>
+                    Array.from(m.addedNodes)
+                        .concat(Array.from(m.removedNodes))
+                        .every((n) => n.nodeType === 1 && n.matches && n.matches('.alertMessage[data-alert="1"]'))
                 );
                 if (onlyAlert && mutationsList.length > 0) return;
             }
