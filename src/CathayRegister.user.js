@@ -34,13 +34,13 @@ const pageAlert = (text, type = "", ...otherMsgs) => {
     let $msg;
     if (type === "error") {
         console.error(text, ...otherMsgs);
-        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:red", textContent: text });
+        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:red", textContent: text, "data-alert": "1" });
     } else if (type === "warn") {
         console.warn(text, ...otherMsgs);
-        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:orange", textContent: text });
+        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", style: "color:orange", textContent: text, "data-alert": "1" });
     } else {
         console.log(text, ...otherMsgs);
-        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: text });
+        $msg = GM_addElement(alertDiv, "div", { class: "alertMessage", textContent: text, "data-alert": "1" });
     }
     alertMQ.push($msg);
     if (alertMQ.length > 15) {
@@ -89,13 +89,11 @@ const pageAlert = (text, type = "", ...otherMsgs) => {
             if (match && match[1]) {
                 return match[1];
             }
-            pageAlert("[getActNoFromUrl] 無法取得 act_no，請確認 URL 格式", "error");
-            console.warn("[getActNoFromUrl] 無法取得 act_no，hash:", hash);
-            return null;
+            console.log("[getActNoFromUrl] 無法取得 act_no，hash:", hash);
         } catch (err) {
             pageAlert("[getActNoFromUrl] 執行失敗", "error", err);
-            return null;
         }
+        return null;
     }
 
     /**
@@ -107,8 +105,7 @@ const pageAlert = (text, type = "", ...otherMsgs) => {
     function fetchApplyInfo() {
         const actNo = getActNoFromUrl();
         if (!actNo) {
-            pageAlert("[fetchApplyInfo] 無法取得 act_no，略過 API 呼叫", "error");
-            console.warn("[fetchApplyInfo] actNo 不存在，略過 API 呼叫");
+            console.log("[fetchApplyInfo] actNo 不存在，略過 API 呼叫");
             return;
         }
         fetchQuestionnaireData(actNo)
@@ -214,8 +211,17 @@ const pageAlert = (text, type = "", ...otherMsgs) => {
      * DOM 監聽回呼，優化防抖與 flag 管理
      * @returns {void}
      */
-    function observerCallback() {
+    function observerCallback(mutationsList) {
         try {
+            // 檢查是否僅有 alertMessage 變動
+            if (mutationsList && Array.isArray(mutationsList)) {
+                const onlyAlert = mutationsList.every(m =>
+                    Array.from(m.addedNodes).concat(Array.from(m.removedNodes)).every(
+                        n => n.nodeType === 1 && n.matches && n.matches('.alertMessage[data-alert="1"]')
+                    )
+                );
+                if (onlyAlert && mutationsList.length > 0) return;
+            }
             const currentUrl = window.location.href;
             if (currentUrl !== lastUrl) {
                 applyInfoFetched = false;
