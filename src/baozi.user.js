@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
-// @description  包子漫畫：簡化介面、已讀紀錄、鍵盤控制翻頁 (W:上 S:下 A/←:上一話 D/→:下一話 F:全螢幕)
+// @version      1.0.8
+// @description  包子漫畫：簡化介面、已讀紀錄、鍵盤控制翻頁 (W:上 S:下 A/←:上一話 D/→:下一話 F:全螢幕)、手機觸控翻頁
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @match        https://www.baozimh.com/comic/*
@@ -108,6 +108,22 @@ let loader,
         const autoPrevPage = () => {
             if (window.scrollY <= 10) clickPrev();
         };
+
+        // 手機裝置觸控支援
+        if (window.innerWidth < 760) {
+            document.addEventListener("click", (e) => {
+                const clickX = e.clientX;
+                const screenWidth = window.innerWidth;
+                const leftZone = screenWidth * 0.3;
+                const rightZone = screenWidth * 0.7;
+                
+                if (clickX < leftZone) {
+                    autoPrevPage();
+                } else if (clickX > rightZone) {
+                    autoNextPage();
+                }
+            });
+        }
 
         document.addEventListener("keydown", (e) => {
             switch (e.key) {
