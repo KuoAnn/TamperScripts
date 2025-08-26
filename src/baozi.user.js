@@ -122,7 +122,7 @@ let loader,
 
         // 裝置觸控支援，螢幕上下預留 50px 不動作
         document.addEventListener("click", (e) => {
-            if (window.innerWidth < 800) {
+            if (window.innerWidth < 1000) {
                 const clickX = e.clientX;
                 const clickY = e.clientY;
                 const screenWidth = window.innerWidth;
