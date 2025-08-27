@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.14
-// @description  包子漫畫：簡化介面、閱讀紀錄標示/清除、鍵盤 (W/S 上下捲動 A/← 上一話 D/→ 下一話 F 全螢幕)、滑輪自動翻頁、手機螢幕左右點擊翻頁
+// @version      1.0.15
+// @description  包子漫畫：簡化介面、閱讀紀錄標示/清除、鍵盤 (W/S 上下捲動 A/← 上一話 D/→ 下一話 F 全螢幕)、滑輪自動翻頁、手機螢幕左右點擊翻頁 (可互換)
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @match        https://www.baozimh.com/comic/*
@@ -24,6 +24,10 @@ GM_addStyle(`
   .alertMessage{background:rgba(94,39,0,0.78);color:#fff;padding:4px 8px;margin:4px;border-radius:5px;pointer-events:auto;font-size:13px;line-height:1.4;box-shadow:0 2px 4px rgba(0,0,0,.3);}
   #__nuxt{padding:0}
   .clearReadBtn{margin-left:6px;max-height:42px;cursor:pointer;}
+    .swapClickBtn{position:fixed;top:6px;right:6px;z-index:10000;background:#c95000;color:#fff;border:none;padding:6px 10px;border-radius:5px;font-size:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;cursor:pointer;opacity:.88;}
+    .swapClickBtn:hover{opacity:1}
+    .swapClickBtn:active{transform:scale(.95)}
+    @media(min-width:1000px){.swapClickBtn{display:none}}
 `);
 
 const alertQueue = [];
@@ -175,18 +179,61 @@ const setStoredReads = (key, arr) => GM_setValue(key, JSON.stringify(arr));
         };
         const autoPrevPage = () => { if (window.scrollY <= 10) clickPrev(); };
 
-        // 手機/平板點擊區域翻頁 (上下 50px 保留)
+        // 手機/平板點擊區域翻頁 (上下 50px 保留) + 可互換左右區域
+        let clickSwap = !!GM_getValue("baozi_clickSwap", false);
+
+        /** 更新按鈕文字 */
+        const updateSwapBtnText = () => {
+            const btn = document.querySelector('.swapClickBtn');
+            if (!btn) return;
+            btn.textContent = clickSwap ? '左翻' : '右翻';
+        };
+
+        /** 初始化互換按鈕 (僅行動裝置寬度) */
+        const initSwapBtn = () => {
+            if (window.innerWidth >= 1000) return; // 僅小螢幕顯示
+            if (document.querySelector('.swapClickBtn')) { updateSwapBtnText(); return; }
+            const btn = GM_addElement(document.body, 'button', { class: 'swapClickBtn' });
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                clickSwap = !clickSwap;
+                GM_setValue('baozi_clickSwap', clickSwap);
+                updateSwapBtnText();
+                alert(clickSwap ? '已啟用：左右點擊區塊互換' : '已還原：左右點擊區塊預設');
+            });
+            updateSwapBtnText();
+        };
+        initSwapBtn();
+        window.addEventListener('resize', () => { if (window.innerWidth < 1000) initSwapBtn(); });
+
         document.addEventListener("click", (e) => {
             if (window.innerWidth < 1000) {
+                if (e.target instanceof HTMLElement && e.target.closest('.swapClickBtn')) return; // 點擊按鈕不觸發翻頁
                 const { clientX: x, clientY: y } = e;
                 const w = window.innerWidth, h = window.innerHeight;
                 if (y < 50 || y > h - 50) return; // 上下緩衝
-                if (x < w * 0.3) {
-                    window.scrollBy({ top: -900, behavior: "smooth" });
-                    autoPrevPage();
-                } else if (x > w * 0.7) {
-                    window.scrollBy({ top: 900, behavior: "smooth" });
-                    autoNextPage();
+                const leftArea = x < w * 0.3;
+                const rightArea = x > w * 0.7;
+                if (!leftArea && !rightArea) return;
+
+                if (clickSwap) {
+                    // 互換：左→下一章方向 (往下捲) 右→上一章方向 (往上捲)
+                    if (leftArea) {
+                        window.scrollBy({ top: 900, behavior: 'smooth' });
+                        autoNextPage();
+                    } else if (rightArea) {
+                        window.scrollBy({ top: -800, behavior: 'smooth' });
+                        autoPrevPage();
+                    }
+                } else {
+                    // 預設：左→上一章方向 右→下一章方向
+                    if (leftArea) {
+                        window.scrollBy({ top: -800, behavior: 'smooth' });
+                        autoPrevPage();
+                    } else if (rightArea) {
+                        window.scrollBy({ top: 900, behavior: 'smooth' });
+                        autoNextPage();
+                    }
                 }
             }
         });
