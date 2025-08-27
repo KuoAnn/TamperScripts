@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.13
+// @version      1.0.14
 // @description  包子漫畫：簡化介面、閱讀紀錄標示/清除、鍵盤 (W/S 上下捲動 A/← 上一話 D/→ 下一話 F 全螢幕)、滑輪自動翻頁、手機螢幕左右點擊翻頁
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -72,6 +72,10 @@ const setStoredReads = (key, arr) => GM_setValue(key, JSON.stringify(arr));
         saveLastRead();      // 記錄本章進度
         addHotkey();         // 鍵盤與滑輪/觸控支援
         showDeviceInfo();    // 提示裝置資訊
+        
+        rmEles(".l-content", "更多推薦");
+        rmEles("#bottom");
+        rmEles("div a", "回饋錯誤")
     } else if (hostname === "www.baozimh.com") {
         // 首頁/漫畫目錄站點：整理介面 + 顯示歷史閱讀
         loader = setInterval(handleLoader, 500);
