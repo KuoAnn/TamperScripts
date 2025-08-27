@@ -75,7 +75,6 @@ const setStoredReads = (key, arr) => GM_setValue(key, JSON.stringify(arr));
     if (hostname === "www.twmanga.com") {
         saveLastRead();      // 記錄本章進度
         addHotkey();         // 鍵盤與滑輪/觸控支援
-        showDeviceInfo();    // 提示裝置資訊
         
         rmEles(".l-content", "更多推薦");
         rmEles("#bottom");
@@ -83,17 +82,6 @@ const setStoredReads = (key, arr) => GM_setValue(key, JSON.stringify(arr));
     } else if (hostname === "www.baozimh.com") {
         // 首頁/漫畫目錄站點：整理介面 + 顯示歷史閱讀
         loader = setInterval(handleLoader, 500);
-    }
-
-    /** 裝置資訊提示 */
-    function showDeviceInfo() {
-        try {
-            const w = window.innerWidth;
-            const device = w < 760 ? "手機" : w < 1024 ? "平板" : "電腦";
-            alert(`裝置: ${device} (${w}px)`, 4000);
-        } catch (e) {
-            console.error("showDeviceInfo error", e);
-        }
     }
 
     /** 紀錄目前閱讀章節 (twmanga) */
