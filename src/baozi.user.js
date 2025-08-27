@@ -111,12 +111,25 @@ let loader,
     }
 
     function addHotkey() {
-        const clickNext = () => document.querySelector("a#next-chapter")?.click();
-        const clickPrev = () => document.querySelector("a#prev-chapter")?.click();
+        const clickNext = () => {
+            alert("即將前往下一章");
+            document.querySelector("a#next-chapter")?.click();
+        };
+        const clickPrev = () => {
+            alert("即將前往上一章");
+            document.querySelector("a#prev-chapter")?.click();
+        };
         const autoNextPage = () => {
+            alert(
+                `${window.innerHeight}+${window.scrollY.toFixed(0)}+10=${(window.innerHeight + window.scrollY + 10).toFixed(0)}|${
+                    document.body.offsetHeight
+                }`,
+                3000
+            );
             if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) clickNext();
         };
         const autoPrevPage = () => {
+            alert(`${window.scrollY}`, 3000);
             if (window.scrollY <= 10) clickPrev();
         };
 
@@ -133,10 +146,10 @@ let loader,
                 if (clickY < 50 || clickY > screenHeight - 50) return;
 
                 if (clickX < leftZone) {
-                    window.scrollBy({ top: -window.innerHeight * 0.98, behavior: "smooth" });
+                    window.scrollBy({ top: -900, behavior: "smooth" });
                     autoPrevPage();
                 } else if (clickX > rightZone) {
-                    window.scrollBy({ top: window.innerHeight * 0.98, behavior: "smooth" });
+                    window.scrollBy({ top: 900, behavior: "smooth" });
                     autoNextPage();
                 }
             }
