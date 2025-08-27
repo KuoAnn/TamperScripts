@@ -117,7 +117,8 @@ let loader,
         const clickPrev = () => {
             document.querySelector("a#prev-chapter")?.click();
         };
-        // 連續兩次到底才前往下一章，避免滑太快誤觸
+        // 連續n次到底才前往下一章，避免滑太快誤觸
+        const bottomDetectThreshold = 1;
         let bottomDetectCount = 0;
         const autoNextPage = () => {
             const scrollBottom = window.innerHeight + window.scrollY;
@@ -126,7 +127,7 @@ let loader,
             if (scrollBottom + 100 >= docHeight) {
                 bottomDetectCount++;
                 alert("即將前往下一章..." + bottomDetectCount);
-                if (bottomDetectCount >= 2) {
+                if (bottomDetectCount >= bottomDetectThreshold) {
                     bottomDetectCount = 0;
                     clickNext();
                 }
