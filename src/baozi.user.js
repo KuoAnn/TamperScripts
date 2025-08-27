@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.11
+// @version      1.0.12
 // @description  包子漫畫：簡化介面、已讀紀錄、鍵盤控制翻頁 (W:上 S:下 A/←:上一話 D/→:下一話 F:全螢幕)、手機觸控翻頁
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -112,24 +112,30 @@ let loader,
 
     function addHotkey() {
         const clickNext = () => {
-            alert("即將前往下一章");
             document.querySelector("a#next-chapter")?.click();
         };
         const clickPrev = () => {
-            alert("即將前往上一章");
             document.querySelector("a#prev-chapter")?.click();
         };
+        // 連續兩次到底才前往下一章，避免滑太快誤觸
+        let bottomDetectCount = 0;
         const autoNextPage = () => {
-            alert(
-                `${window.innerHeight}+${window.scrollY.toFixed(0)}+10=${(window.innerHeight + window.scrollY + 10).toFixed(0)}|${
-                    document.body.offsetHeight
-                }`,
-                3000
-            );
-            if (window.innerHeight + window.scrollY + 10 >= document.body.offsetHeight) clickNext();
+            const scrollBottom = window.innerHeight + window.scrollY;
+            const docHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+            // 允許 100px 誤差
+            if (scrollBottom + 100 >= docHeight) {
+                bottomDetectCount++;
+                alert("即將前往下一章..." + bottomDetectCount);
+                if (bottomDetectCount >= 2) {
+                    bottomDetectCount = 0;
+                    clickNext();
+                }
+            } else {
+                // 只要中途離開底部就重置
+                bottomDetectCount = 0;
+            }
         };
         const autoPrevPage = () => {
-            alert(`${window.scrollY}`, 3000);
             if (window.scrollY <= 10) clickPrev();
         };
 
