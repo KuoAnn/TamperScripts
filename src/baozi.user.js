@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi
 // @namespace    http://tampermonkey.net/
-// @version      1.0.15
+// @version      1.0.17
 // @description  包子漫畫：簡化介面、閱讀紀錄標示/清除、鍵盤 (W/S 上下捲動 A/← 上一話 D/→ 下一話 F 全螢幕)、滑輪自動翻頁、手機螢幕左右點擊翻頁 (可互換)
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -187,7 +187,6 @@ const setStoredReads = (key, arr) => GM_setValue(key, JSON.stringify(arr));
                 clickSwap = !clickSwap;
                 GM_setValue('baozi_clickSwap', clickSwap);
                 updateSwapBtnText();
-                alert(clickSwap ? '已啟用：左右點擊區塊互換' : '已還原：左右點擊區塊預設');
             });
             updateSwapBtnText();
         };
@@ -199,29 +198,40 @@ const setStoredReads = (key, arr) => GM_setValue(key, JSON.stringify(arr));
                 if (e.target instanceof HTMLElement && e.target.closest('.swapClickBtn')) return; // 點擊按鈕不觸發翻頁
                 const { clientX: x, clientY: y } = e;
                 const w = window.innerWidth, h = window.innerHeight;
-                if (y < 50 || y > h - 50) return; // 上下緩衝
-                const leftArea = x < w * 0.3;
-                const rightArea = x > w * 0.7;
-                if (!leftArea && !rightArea) return;
 
+                // 新版區域：
+                // 左翻 (未互換)：
+                //   A. 左 30% 且 上 75% (y < 0.75h)
+                //   B. 右 30% 且 上 25% (y < 0.25h)
+                // 右翻 (未互換)：
+                //   C. 右 30% 且 下 75% (y >= 0.25h)
+                //   D. 左 30% 且 下 25% (y > 0.75h)
+                // 注意：右側以 25% 分界，左側以 75% 分界，避免重疊。
+                const inLeft30 = x < w * 0.3;
+                const inRight30 = x > w * 0.7;
+                const yTop25 = y < h * 0.25;
+                const yTop75 = y < h * 0.75;
+                const yBottom75 = y >= h * 0.25; // 右側底部 75%
+                const yBottom25 = y > h * 0.75;  // 左側底部 25%
+
+                let isLeftFlip = (inLeft30 && yTop75) || (inRight30 && yTop25);
+                let isRightFlip = (inRight30 && yBottom75) || (inLeft30 && yBottom25);
+
+                if (!isLeftFlip && !isRightFlip) return; // 未命中任何翻頁區域
+
+                // 互換時交換行為
                 if (clickSwap) {
-                    // 互換：左→下一章方向 (往下捲) 右→上一章方向 (往上捲)
-                    if (leftArea) {
-                        window.scrollBy({ top: 900, behavior: 'smooth' });
-                        autoNextPage();
-                    } else if (rightArea) {
-                        window.scrollBy({ top: -800, behavior: 'smooth' });
-                        autoPrevPage();
-                    }
-                } else {
-                    // 預設：左→上一章方向 右→下一章方向
-                    if (leftArea) {
-                        window.scrollBy({ top: -800, behavior: 'smooth' });
-                        autoPrevPage();
-                    } else if (rightArea) {
-                        window.scrollBy({ top: 900, behavior: 'smooth' });
-                        autoNextPage();
-                    }
+                    [isLeftFlip, isRightFlip] = [isRightFlip, isLeftFlip];
+                }
+
+                if (isLeftFlip) {
+                    // 左翻：往上捲 & 嘗試上一章
+                    window.scrollBy({ top: -800, behavior: 'smooth' });
+                    autoPrevPage();
+                } else if (isRightFlip) {
+                    // 右翻：往下捲 & 嘗試下一章
+                    window.scrollBy({ top: 900, behavior: 'smooth' });
+                    autoNextPage();
                 }
             }
         });
