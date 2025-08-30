@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         TxTicket
 // @namespace    http://tampermonkey.net/
-// @version      1.3.3
-// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定/進階設定固定預設值/場次空值視為隨機/儲存時逗號檢查/絕對時間設定/UI位置優化左下角/控制台增加文字顯示/設定面板優化寬度和滾動條/自動模式倒數計時啟動/關閉面板時檢查未儲存變更
+// @version      1.3.4
+// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定/進階設定固定預設值/場次空值視為隨機/儲存時逗號檢查/絕對時間設定/UI位置優化左下角/控制台增加文字顯示/設定面板優化寬度和滾動條/自動模式倒數計時啟動/關閉面板時檢查未儲存變更/設定面板遮罩效果
 // @author       KuoAnn
 // @match        https://tixcraft.com/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=tixcraft.com
@@ -170,15 +170,10 @@
 
         /* 控制面板樣式 */
         .tx-control-panel {
-            position: fixed !important;
-            top: 50% !important;
-            left: 50% !important;
-            transform: translate(-50%, -50%) !important;
             background: white !important;
             border: 2px solid #333 !important;
             border-radius: 15px !important;
             padding: 0 !important;
-            z-index: 10000 !important;
             box-shadow: 0 4px 30px rgba(0,0,0,0.3) !important;
             width: 800px !important;
             max-width: 95vw !important;
@@ -388,6 +383,20 @@
 
         .tx-panel-button:active {
             transform: translateY(-1px) !important;
+        }
+
+        /* 遮罩樣式 */
+        .tx-overlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background-color: rgba(0, 0, 0, 0.5) !important;
+            z-index: 9999 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
     `);
 
@@ -932,25 +941,46 @@
     class ControlPanelManager {
         constructor() {
             this.panel = null;
+            this.overlay = null;
         }
 
         showPanel() {
             if (this.panel) {
                 this.panel.remove();
             }
+            if (this.overlay) {
+                this.overlay.remove();
+            }
 
             // 檢查並自動填入啟動時間
             this._checkAndSetExecuteTime();
 
+            // 創建遮罩
+            this.overlay = DOMUtils.createElement("div", {
+                className: "tx-overlay",
+            });
+
             this.panel = this._createPanel();
-            document.body.appendChild(this.panel);
+            this.overlay.appendChild(this.panel);
+            document.body.appendChild(this.overlay);
             this._populateValues();
+
+            // 點擊遮罩關閉面板
+            this.overlay.addEventListener("click", (e) => {
+                if (e.target === this.overlay) {
+                    this._safeHidePanel();
+                }
+            });
         }
 
         hidePanel() {
             if (this.panel) {
                 this.panel.remove();
                 this.panel = null;
+            }
+            if (this.overlay) {
+                this.overlay.remove();
+                this.overlay = null;
             }
         }
 
@@ -1098,7 +1128,7 @@
                     <div class="tx-control-section">
                         <h3>⏰ 執行時間</h3>
                         <div class="tx-control-row">
-                            <label class="tx-control-label">啟動時間:(絕對時間，已過則立即啟動)</label>
+                            <label class="tx-control-label">啟動時間:(過期則立即啟動)</label>
                             <input type="datetime-local" id="tx-execute-time" class="tx-control-input" step="1">
                             <div class="tx-control-help">格式: YYYY-MM-DD HH:mm:ss，若時間已過則立即執行，空白=立即執行</div>
                         </div>
@@ -1145,13 +1175,6 @@
             // 關閉按鈕事件
             panel.querySelector("#tx-panel-close").addEventListener("click", () => {
                 this._safeHidePanel();
-            });
-
-            // 點擊面板外區域關閉
-            panel.addEventListener("click", (e) => {
-                if (e.target === panel) {
-                    this._safeHidePanel();
-                }
             });
         }
 
