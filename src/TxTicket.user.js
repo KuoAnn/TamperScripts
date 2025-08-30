@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         TxTicket
 // @namespace    http://tampermonkey.net/
-// @version      1.3.2
-// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定/進階設定固定預設值/場次空值視為隨機/儲存時逗號檢查/絕對時間設定/UI位置優化左下角/控制台增加文字顯示/設定面板優化寬度和滾動條/自動模式倒數計時啟動
+// @version      1.3.3
+// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定/進階設定固定預設值/場次空值視為隨機/儲存時逗號檢查/絕對時間設定/UI位置優化左下角/控制台增加文字顯示/設定面板優化寬度和滾動條/自動模式倒數計時啟動/關閉面板時檢查未儲存變更
 // @author       KuoAnn
 // @match        https://tixcraft.com/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=tixcraft.com
@@ -954,6 +954,60 @@
             }
         }
 
+        // 檢查設定值是否有變更
+        _hasConfigChanged() {
+            if (!this.panel) return false;
+
+            try {
+                // 獲取目前表單的值
+                const currentValues = this._getCurrentFormValues();
+                
+                // 比較與原始配置的差異
+                return (
+                    currentValues.buyDateIndexes !== CONFIG.BUY_DATE_INDEXES.join(",") ||
+                    currentValues.areaGroups !== CONFIG.BUY_AREA_GROUPS.join(",") ||
+                    currentValues.areaSeats !== CONFIG.BUY_AREA_SEATS.join(",") ||
+                    currentValues.buyCount !== CONFIG.BUY_COUNT.toString() ||
+                    currentValues.payType !== CONFIG.PAY_TYPE ||
+                    currentValues.executeTime !== CONFIG.EXECUTE_TIME ||
+                    currentValues.bankCodes !== JSON.stringify(CONFIG.BANK_CODES, null, 2) ||
+                    currentValues.excludeKeywords !== CONFIG.EXCLUDE_KEYWORDS.join(",")
+                );
+            } catch (error) {
+                console.error("檢查設定變更時發生錯誤:", error);
+                return false;
+            }
+        }
+
+        // 獲取目前表單的值
+        _getCurrentFormValues() {
+            return {
+                buyDateIndexes: this.panel.querySelector("#tx-buy-date-indexes").value,
+                areaGroups: this.panel.querySelector("#tx-area-groups").value,
+                areaSeats: this.panel.querySelector("#tx-area-seats").value,
+                buyCount: this.panel.querySelector("#tx-buy-count").value,
+                payType: this.panel.querySelector("#tx-pay-type").value,
+                executeTime: this.panel.querySelector("#tx-execute-time").value,
+                bankCodes: this.panel.querySelector("#tx-bank-codes").value,
+                excludeKeywords: this.panel.querySelector("#tx-exclude-keywords").value
+            };
+        }
+
+        // 安全關閉面板（檢查是否有未儲存的變更）
+        _safeHidePanel() {
+            if (this._hasConfigChanged()) {
+                const confirmed = confirm("有設定值尚未儲存，請確認是否儲存？");
+                if (confirmed) {
+                    this._saveConfig();
+                    return;
+                }
+                // 如果用戶選擇取消，不關閉面板
+                return false;
+            }
+            this.hidePanel();
+            return true;
+        }
+
         _checkAndSetExecuteTime() {
             const currentExecuteTime = CONFIG.EXECUTE_TIME;
             
@@ -1085,18 +1139,18 @@
             });
 
             panel.querySelector("#tx-cancel-config").addEventListener("click", () => {
-                this.hidePanel();
+                this._safeHidePanel();
             });
 
             // 關閉按鈕事件
             panel.querySelector("#tx-panel-close").addEventListener("click", () => {
-                this.hidePanel();
+                this._safeHidePanel();
             });
 
             // 點擊面板外區域關閉
             panel.addEventListener("click", (e) => {
                 if (e.target === panel) {
-                    this.hidePanel();
+                    this._safeHidePanel();
                 }
             });
         }
@@ -1207,7 +1261,6 @@
                 configManager.set("OCR_API_URL", ocrApi);
                 configManager.set("OCR_PREHEAT_INTERVAL", ocrInterval);
 
-                alert("設定已儲存！即將重整頁面");
                 window.location.reload(true);
             } catch (error) {
                 alert("儲存失敗：" + error.message);
