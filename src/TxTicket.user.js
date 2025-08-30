@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         TxTicket
 // @namespace    http://tampermonkey.net/
-// @version      1.0.9
-// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數
+// @version      1.1.0
+// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定
 // @author       KuoAnn
 // @match        https://tixcraft.com/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=tixcraft.com
@@ -13,6 +13,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
 // ==/UserScript==
 
 /**
@@ -24,28 +25,80 @@
     'use strict';
 
     // ==================== 配置參數 ====================
-    const CONFIG = {
-        // 購票配置
-        BUY_DATE_INDEXES: [-1], // 場次優先順序：1=第一場 2=第二場... 負數=隨機
-        BUY_AREA_GROUPS: ["", "", ""], // 座位群組(通常是價位)：""=全部
-        BUY_AREA_SEATS: [""], // 座位優先順序；""=隨機 空白分隔=AND邏輯
-        BUY_COUNT: 2, // 購買張數，若無則選擇最大值
-        PAY_TYPE: "A", // 付款方式：A=ATM, C=信用卡
-        EXECUTE_TIME: "2024/10/10 23:31:30", // 啟動時間：yyyy/MM/dd HH:mm:ss，""=立即執行
-        
-        // OCR API 配置
-        OCR_API_URL: "https://asia-east1-futureminer.cloudfunctions.net/ocr",
-        OCR_PREHEAT_INTERVAL: 10 * 60 * 1000, // 預熱間隔（毫秒）
-        
-        // 銀行卡號配置
-        BANK_CODES: {
-            "國泰世華": "40637634",
-            "中國信託": "424162"
-        },
-        
-        // 排除關鍵字
-        EXCLUDE_KEYWORDS: ["輪椅", "身障", "障礙", "Restricted", "遮蔽", "視線不完整"]
-    };
+    class ConfigManager {
+        constructor() {
+            this.defaultConfig = {
+                // 購票配置
+                BUY_DATE_INDEXES: [-1], // 場次優先順序：1=第一場 2=第二場... 負數=隨機
+                BUY_AREA_GROUPS: [""], // 座位群組(通常是價位)：""=全部
+                BUY_AREA_SEATS: [""], // 座位優先順序；""=隨機 空白分隔=AND邏輯
+                BUY_COUNT: 2, // 購買張數，若無則選擇最大值
+                PAY_TYPE: "A", // 付款方式：A=ATM, C=信用卡
+                EXECUTE_TIME: "", // 啟動時間：HH:mm:ss，""=立即執行
+                
+                // OCR API 配置
+                OCR_API_URL: "https://asia-east1-futureminer.cloudfunctions.net/ocr",
+                OCR_PREHEAT_INTERVAL: 10 * 60 * 1000, // 預熱間隔（毫秒）
+                
+                // 銀行卡號配置
+                BANK_CODES: {
+                    "國泰世華": "40637634",
+                    "中國信託": "424162"
+                },
+                
+                // 排除關鍵字
+                EXCLUDE_KEYWORDS: ["輪椅", "身障", "障礙", "Restricted", "遮蔽", "視線不完整"]
+            };
+            this.config = this.loadConfig();
+        }
+
+        loadConfig() {
+            const config = { ...this.defaultConfig };
+            
+            // 從 GM 儲存中載入設定
+            Object.keys(this.defaultConfig).forEach(key => {
+                const stored = GM_getValue(`tx_config_${key}`, null);
+                if (stored !== null) {
+                    try {
+                        config[key] = JSON.parse(stored);
+                    } catch (e) {
+                        console.error(`載入設定 ${key} 失敗:`, e);
+                    }
+                }
+            });
+            
+            return config;
+        }
+
+        saveConfig() {
+            Object.keys(this.config).forEach(key => {
+                GM_setValue(`tx_config_${key}`, JSON.stringify(this.config[key]));
+            });
+        }
+
+        get(key) {
+            return this.config[key];
+        }
+
+        set(key, value) {
+            this.config[key] = value;
+            this.saveConfig();
+        }
+
+        resetToDefault() {
+            this.config = { ...this.defaultConfig };
+            this.saveConfig();
+        }
+    }
+
+    const configManager = new ConfigManager();
+    const CONFIG = new Proxy(configManager.config, {
+        get: (target, prop) => configManager.get(prop),
+        set: (target, prop, value) => {
+            configManager.set(prop, value);
+            return true;
+        }
+    });
 
     // ==================== 初始化樣式 ====================
     GM_addStyle(`
@@ -92,6 +145,165 @@
         /* 隱藏活動標題 */
         .tx-hidden {
             display: none !important;
+        }
+
+        /* 控制面板樣式 */
+        .tx-control-panel {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            background: white !important;
+            border: 2px solid #333 !important;
+            border-radius: 10px !important;
+            padding: 20px !important;
+            z-index: 10000 !important;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+            max-width: 90vw !important;
+            max-height: 90vh !important;
+            overflow-y: auto !important;
+            font-family: Arial, sans-serif !important;
+            color: #333 !important;
+        }
+
+        .tx-control-panel h2 {
+            margin: 0 0 20px 0 !important;
+            color: #007bff !important;
+            text-align: center !important;
+            border-bottom: 2px solid #007bff !important;
+            padding-bottom: 10px !important;
+        }
+
+        .tx-control-section {
+            margin-bottom: 20px !important;
+            padding: 15px !important;
+            border: 1px solid #ddd !important;
+            border-radius: 5px !important;
+            background: #f9f9f9 !important;
+        }
+
+        .tx-control-section h3 {
+            margin: 0 0 15px 0 !important;
+            color: #555 !important;
+            font-size: 16px !important;
+        }
+
+        .tx-control-row {
+            display: flex !important;
+            align-items: center !important;
+            margin-bottom: 10px !important;
+            flex-wrap: wrap !important;
+        }
+
+        .tx-control-label {
+            min-width: 120px !important;
+            margin-right: 10px !important;
+            font-weight: bold !important;
+            color: #333 !important;
+        }
+
+        .tx-control-input {
+            flex: 1 !important;
+            padding: 5px 10px !important;
+            border: 1px solid #ccc !important;
+            border-radius: 3px !important;
+            font-size: 14px !important;
+        }
+
+        .tx-control-textarea {
+            width: 100% !important;
+            min-height: 80px !important;
+            padding: 8px !important;
+            border: 1px solid #ccc !important;
+            border-radius: 3px !important;
+            font-family: monospace !important;
+            font-size: 12px !important;
+            resize: vertical !important;
+        }
+
+        .tx-control-select {
+            padding: 5px 10px !important;
+            border: 1px solid #ccc !important;
+            border-radius: 3px !important;
+            font-size: 14px !important;
+        }
+
+        .tx-control-buttons {
+            text-align: center !important;
+            margin-top: 20px !important;
+            border-top: 1px solid #ddd !important;
+            padding-top: 15px !important;
+        }
+
+        .tx-control-button {
+            padding: 10px 20px !important;
+            margin: 0 10px !important;
+            border: none !important;
+            border-radius: 5px !important;
+            cursor: pointer !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+        }
+
+        .tx-control-button-save {
+            background: #28a745 !important;
+            color: white !important;
+        }
+
+        .tx-control-button-save:hover {
+            background: #218838 !important;
+        }
+
+        .tx-control-button-reset {
+            background: #dc3545 !important;
+            color: white !important;
+        }
+
+        .tx-control-button-reset:hover {
+            background: #c82333 !important;
+        }
+
+        .tx-control-button-cancel {
+            background: #6c757d !important;
+            color: white !important;
+        }
+
+        .tx-control-button-cancel:hover {
+            background: #5a6268 !important;
+        }
+
+        .tx-control-help {
+            font-size: 12px !important;
+            color: #666 !important;
+            font-style: italic !important;
+            margin-top: 5px !important;
+        }
+
+        /* 控制面板按鈕 */
+        .tx-panel-button {
+            position: fixed !important;
+            top: 50px !important;
+            left: 0 !important;
+            padding: 10px 15px !important;
+            background: #007bff !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 0 8px 8px 0 !important;
+            cursor: pointer !important;
+            z-index: 9998 !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+            box-shadow: 2px 2px 8px rgba(0,0,0,0.3) !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .tx-panel-button:hover {
+            background: #0056b3 !important;
+            transform: translateX(5px) !important;
+        }
+
+        .tx-panel-button:active {
+            transform: translateX(3px) !important;
         }
     `);
 
@@ -625,7 +837,217 @@
         }
     }
 
-    // ==================== UI 管理類 ====================
+    // ==================== 控制面板類 ====================
+    class ControlPanelManager {
+        constructor() {
+            this.panel = null;
+        }
+
+        showPanel() {
+            if (this.panel) {
+                this.panel.remove();
+            }
+
+            this.panel = this._createPanel();
+            document.body.appendChild(this.panel);
+            this._populateValues();
+        }
+
+        hidePanel() {
+            if (this.panel) {
+                this.panel.remove();
+                this.panel = null;
+            }
+        }
+
+        _createPanel() {
+            const panel = DOMUtils.createElement('div', {
+                className: 'tx-control-panel'
+            });
+
+            panel.innerHTML = `
+                <div class="tx-control-section">
+                    <h3>📋 購票設定</h3>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">場次順序:</label>
+                        <input type="text" id="tx-buy-date-indexes" class="tx-control-input" placeholder="例: 1,2,3 或 -1 (隨機)">
+                        <div class="tx-control-help">1=第一場，2=第二場，-1=隨機選擇</div>
+                    </div>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">座位群組:</label>
+                        <input type="text" id="tx-area-groups" class="tx-control-input" placeholder="例: VIP,一般,學生票 (空白=全部)">
+                        <div class="tx-control-help">依價位或區域分組，空白表示不限制</div>
+                    </div>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">座位關鍵字:</label>
+                        <input type="text" id="tx-area-seats" class="tx-control-input" placeholder="例: A區 B區,前排 後排 (空格=AND邏輯)">
+                        <div class="tx-control-help">多個關鍵字用逗號分隔，空格表示同時包含</div>
+                    </div>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">排除關鍵字:</label>
+                        <input type="text" id="tx-exclude-keywords" class="tx-control-input" placeholder="輪椅,身障,障礙,Restricted,遮蔽,視線不完整">
+                        <div class="tx-control-help">包含這些關鍵字的座位將被排除，用逗號分隔</div>
+                    </div>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">購買張數:</label>
+                        <input type="number" id="tx-buy-count" class="tx-control-input" min="1" max="6" value="2">
+                        <div class="tx-control-help">若此數量無法選擇則自動選最大值</div>
+                    </div>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">付款方式:</label>
+                        <select id="tx-pay-type" class="tx-control-select">
+                            <option value="A">ATM 轉帳</option>
+                            <option value="C">信用卡</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="tx-control-section">
+                    <h3>⏰ 執行時間</h3>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">啟動時間:</label>
+                        <input type="time" id="tx-execute-time" class="tx-control-input" step="1">
+                        <div class="tx-control-help">格式: HH:mm:ss，若當前時間已過則視為明天，空白=立即執行</div>
+                    </div>
+                </div>
+
+                <div class="tx-control-section">
+                    <h3>🏦 銀行設定</h3>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">銀行卡號:</label>
+                        <textarea id="tx-bank-codes" class="tx-control-textarea" placeholder='{"國泰世華": "40637634", "中國信託": "424162"}'></textarea>
+                        <div class="tx-control-help">JSON 格式，銀行名稱對應卡號</div>
+                    </div>
+                </div>
+
+                <div class="tx-control-section">
+                    <h3>🔧 進階設定</h3>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">OCR API:</label>
+                        <input type="url" id="tx-ocr-api" class="tx-control-input" placeholder="https://asia-east1-futureminer.cloudfunctions.net/ocr">
+                    </div>
+                    <div class="tx-control-row">
+                        <label class="tx-control-label">預熱間隔:</label>
+                        <input type="number" id="tx-ocr-interval" class="tx-control-input" min="60" max="3600" value="600" step="60">
+                        <div class="tx-control-help">OCR 預熱間隔（秒）</div>
+                    </div>
+                </div>
+
+                <div class="tx-control-buttons">
+                    <button class="tx-control-button tx-control-button-save" id="tx-save-config">💾 儲存設定</button>
+                    <button class="tx-control-button tx-control-button-reset" id="tx-reset-config">🔄 重設為預設</button>
+                    <button class="tx-control-button tx-control-button-cancel" id="tx-cancel-config">❌ 取消</button>
+                </div>
+            `;
+
+            this._bindEvents(panel);
+            return panel;
+        }
+
+        _bindEvents(panel) {
+            panel.querySelector('#tx-save-config').addEventListener('click', () => {
+                this._saveConfig();
+            });
+
+            panel.querySelector('#tx-reset-config').addEventListener('click', () => {
+                if (confirm('確定要重設為預設值嗎？')) {
+                    configManager.resetToDefault();
+                    alert('設定已重設，即將重整頁面。');
+                    window.location.reload(true);
+                }
+            });
+
+            panel.querySelector('#tx-cancel-config').addEventListener('click', () => {
+                this.hidePanel();
+            });
+
+            // 點擊面板外區域關閉
+            panel.addEventListener('click', (e) => {
+                if (e.target === panel) {
+                    this.hidePanel();
+                }
+            });
+        }
+
+        _populateValues() {
+            if (!this.panel) return;
+
+            // 購票設定
+            this.panel.querySelector('#tx-buy-date-indexes').value = CONFIG.BUY_DATE_INDEXES.join(',');
+            this.panel.querySelector('#tx-area-groups').value = CONFIG.BUY_AREA_GROUPS.join(',');
+            this.panel.querySelector('#tx-area-seats').value = CONFIG.BUY_AREA_SEATS.join(',');
+            this.panel.querySelector('#tx-buy-count').value = CONFIG.BUY_COUNT;
+            this.panel.querySelector('#tx-pay-type').value = CONFIG.PAY_TYPE;
+
+            // 執行時間
+            this.panel.querySelector('#tx-execute-time').value = CONFIG.EXECUTE_TIME;
+
+            // 銀行設定
+            this.panel.querySelector('#tx-bank-codes').value = JSON.stringify(CONFIG.BANK_CODES, null, 2);
+
+            // 排除設定
+            this.panel.querySelector('#tx-exclude-keywords').value = CONFIG.EXCLUDE_KEYWORDS.join(',');
+
+            // 進階設定
+            this.panel.querySelector('#tx-ocr-api').value = CONFIG.OCR_API_URL;
+            this.panel.querySelector('#tx-ocr-interval').value = CONFIG.OCR_PREHEAT_INTERVAL / 1000;
+        }
+
+        _saveConfig() {
+            try {
+                // 購票設定
+                const buyDateIndexes = this.panel.querySelector('#tx-buy-date-indexes').value
+                    .split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                const areaGroups = this.panel.querySelector('#tx-area-groups').value
+                    .split(',').map(s => s.trim()).filter(s => s.length >= 0);
+                const areaSeats = this.panel.querySelector('#tx-area-seats').value
+                    .split(',').map(s => s.trim()).filter(s => s.length >= 0);
+                const buyCount = parseInt(this.panel.querySelector('#tx-buy-count').value);
+                const payType = this.panel.querySelector('#tx-pay-type').value;
+
+                // 執行時間
+                const executeTime = this.panel.querySelector('#tx-execute-time').value;
+
+                // 銀行設定
+                const bankCodes = JSON.parse(this.panel.querySelector('#tx-bank-codes').value);
+
+                // 排除設定
+                const excludeKeywords = this.panel.querySelector('#tx-exclude-keywords').value
+                    .split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+                // 進階設定
+                const ocrApi = this.panel.querySelector('#tx-ocr-api').value.trim();
+                const ocrInterval = parseInt(this.panel.querySelector('#tx-ocr-interval').value) * 1000;
+
+                // 驗證並儲存
+                if (buyDateIndexes.length === 0) buyDateIndexes.push(-1);
+                if (areaGroups.length === 0) areaGroups.push("");
+                if (areaSeats.length === 0) areaSeats.push("");
+                if (isNaN(buyCount) || buyCount < 1) throw new Error('購買張數必須大於 0');
+                if (!['A', 'C'].includes(payType)) throw new Error('付款方式無效');
+                if (!ocrApi.startsWith('http')) throw new Error('OCR API URL 格式無效');
+                if (isNaN(ocrInterval) || ocrInterval < 60000) throw new Error('預熱間隔必須至少 60 秒');
+
+                // 更新設定
+                configManager.set('BUY_DATE_INDEXES', buyDateIndexes);
+                configManager.set('BUY_AREA_GROUPS', areaGroups);
+                configManager.set('BUY_AREA_SEATS', areaSeats);
+                configManager.set('BUY_COUNT', buyCount);
+                configManager.set('PAY_TYPE', payType);
+                configManager.set('EXECUTE_TIME', executeTime);
+                configManager.set('BANK_CODES', bankCodes);
+                configManager.set('EXCLUDE_KEYWORDS', excludeKeywords);
+                configManager.set('OCR_API_URL', ocrApi);
+                configManager.set('OCR_PREHEAT_INTERVAL', ocrInterval);
+
+                alert('設定已儲存！即將重整頁面');
+                window.location.reload(true);
+                
+            } catch (error) {
+                alert('儲存失敗：' + error.message);
+            }
+        }
+    }
     class UIManager {
         static enhanceSubmitButton() {
             const submit = DOMUtils.$('button[type=submit], #submitButton');
@@ -672,6 +1094,27 @@
                 const newAutoMode = appState.toggleAutoMode();
                 this._updateConsoleText(consoleDiv, newAutoMode, isLoggedIn, true);
             });
+
+            // 創建控制面板按鈕
+            this._createControlPanelButton();
+        }
+
+        static _createControlPanelButton() {
+            // 避免重複創建
+            if (DOMUtils.$('#tx-panel-button')) return;
+
+            const button = DOMUtils.createElement('button', {
+                id: 'tx-panel-button',
+                className: 'tx-panel-button',
+                textContent: '⚙️ 設定',
+                onclick: () => {
+                    if (window.txApp && window.txApp.controlPanel) {
+                        window.txApp.controlPanel.showPanel();
+                    }
+                }
+            });
+
+            document.body.appendChild(button);
         }
 
         static _createConsoleDiv() {
@@ -719,11 +1162,36 @@
         }
 
         static _startCountdown(consoleDiv) {
-            console.log("開始倒數:", CONFIG.EXECUTE_TIME);
-            const now = new Date();
-            const executeTime = new Date(CONFIG.EXECUTE_TIME);
-            let diff = executeTime - now;
+            const executeTimeStr = CONFIG.EXECUTE_TIME;
+            console.log("開始倒數:", executeTimeStr);
+            
+            if (!executeTimeStr) {
+                window.location.reload(true);
+                return;
+            }
 
+            // 解析時間字串 (HH:mm:ss)
+            const timeParts = executeTimeStr.split(':');
+            if (timeParts.length !== 3) {
+                console.error("時間格式錯誤，應為 HH:mm:ss");
+                window.location.reload(true);
+                return;
+            }
+
+            const now = new Date();
+            const executeTime = new Date();
+            executeTime.setHours(parseInt(timeParts[0], 10));
+            executeTime.setMinutes(parseInt(timeParts[1], 10));
+            executeTime.setSeconds(parseInt(timeParts[2], 10));
+            executeTime.setMilliseconds(0);
+
+            // 如果設定時間已過，則設為明天同一時間
+            if (executeTime <= now) {
+                executeTime.setDate(executeTime.getDate() + 1);
+            }
+
+            let diff = executeTime - now;
+            
             if (diff > 0) {
                 let seconds = Math.floor(diff / 1000);
                 appState.countdownInterval = setInterval(() => {
@@ -732,7 +1200,17 @@
                         clearInterval(appState.countdownInterval);
                         window.location.reload(true);
                     } else {
-                        consoleDiv.textContent = `🤖 ${seconds} 秒`;
+                        const hours = Math.floor(seconds / 3600);
+                        const minutes = Math.floor((seconds % 3600) / 60);
+                        const secs = seconds % 60;
+                        
+                        if (hours > 0) {
+                            consoleDiv.textContent = `🤖 ${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                        } else if (minutes > 0) {
+                            consoleDiv.textContent = `🤖 ${minutes}:${secs.toString().padStart(2, '0')}`;
+                        } else {
+                            consoleDiv.textContent = `🤖 ${secs} 秒`;
+                        }
                     }
                 }, 1000);
             } else {
@@ -746,13 +1224,25 @@
         constructor() {
             this.ticketHandler = new TicketHandler();
             this.ocrService = new OCRService();
+            this.controlPanel = new ControlPanelManager();
             this.observer = null;
         }
 
         init() {
             this._setupKeyboardListeners();
             this._setupMutationObserver();
+            this._registerMenuCommands();
             this.ocrService.preheatOCR();
+        }
+
+        _registerMenuCommands() {
+            GM_registerMenuCommand('🎛️ 購票設定', () => {
+                this.controlPanel.showPanel();
+            });
+            
+            GM_registerMenuCommand('🔄 重新載入頁面', () => {
+                window.location.reload(true);
+            });
         }
 
         _setupKeyboardListeners() {
@@ -831,6 +1321,9 @@
     // ==================== 應用程式初始化 ====================
     const appState = new AppState();
     const app = new TixCraftBot();
+    
+    // 將 app 實例暴露到全域以供控制面板按鈕使用
+    window.txApp = app;
     
     // 啟動應用程式
     app.init();
