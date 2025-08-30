@@ -9,6 +9,7 @@
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CapitalLogin.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CapitalLogin.user.js
 // @connect      *
+// @connect      https://asia-east1-futureminer.cloudfunctions.net
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_addElement
