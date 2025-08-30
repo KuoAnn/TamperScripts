@@ -100,7 +100,7 @@
         }
         
         .clearReadBtn {
-            margin-left: 6px;
+            margin: 8px;
             max-height: 42px;
             cursor: pointer;
             background: #007cba;
@@ -581,47 +581,39 @@
         }
 
         switch (event.key) {
-            case 'w':
-            case 'W':
+            case "w":
+            case "W":
+            case "PageUp":
                 event.preventDefault();
                 smoothScroll(-window.innerHeight * CONFIG.SCROLL_PERCENTAGE);
                 autoPrevPage();
                 break;
-                
-            case 's':
-            case 'S':
+
+            case "s":
+            case "S":
+            case " ":
+            case "PageDown":
                 event.preventDefault();
                 smoothScroll(window.innerHeight * CONFIG.SCROLL_PERCENTAGE);
                 autoNextPage();
                 break;
-                
-            case ' ':
-            case 'PageDown':
-                event.preventDefault();
-                autoNextPage();
-                break;
-                
-            case 'PageUp':
-                event.preventDefault();
-                autoPrevPage();
-                break;
-                
-            case 'a':
-            case 'A':
-            case 'ArrowLeft':
+
+            case "a":
+            case "A":
+            case "ArrowLeft":
                 event.preventDefault();
                 clickPrev();
                 break;
-                
-            case 'd':
-            case 'D':
-            case 'ArrowRight':
+
+            case "d":
+            case "D":
+            case "ArrowRight":
                 event.preventDefault();
                 clickNext();
                 break;
-                
-            case 'f':
-            case 'F':
+
+            case "f":
+            case "F":
                 event.preventDefault();
                 toggleFullscreen();
                 break;
