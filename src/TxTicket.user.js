@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         TxTicket
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
-// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定/進階設定固定預設值/場次空值視為隨機/儲存時逗號檢查
+// @version      1.3.1
+// @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定/進階設定固定預設值/場次空值視為隨機/儲存時逗號檢查/絕對時間設定/UI位置優化左下角/控制台增加文字顯示/設定面板優化寬度和滾動條
 // @author       KuoAnn
 // @match        https://tixcraft.com/*
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=tixcraft.com
@@ -34,7 +34,7 @@
                 BUY_AREA_SEATS: ["206", ""], // 座位優先順序；""=隨機 空白分隔=AND邏輯
                 BUY_COUNT: 2, // 購買張數，若無則選擇最大值
                 PAY_TYPE: "A", // 付款方式：A=ATM, C=信用卡
-                EXECUTE_TIME: "", // 啟動時間：HH:mm:ss，""=立即執行
+                EXECUTE_TIME: "", // 啟動時間：YYYY-MM-DD HH:mm:ss，""=立即執行
 
                 // OCR API 配置
                 OCR_API_URL: "https://asia-east1-futureminer.cloudfunctions.net/ocr",
@@ -113,21 +113,42 @@
         /* 控制台樣式 */
         .tx-console {
             position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            padding: 10px !important;
+            bottom: 75px !important;
+            left: 10px !important;
+            padding: 10px 14px !important;
             text-align: center !important;
             z-index: 9999 !important;
             color: white !important;
             cursor: pointer !important;
+            border-radius: 8px !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+            box-shadow: 2px 2px 8px rgba(0,0,0,0.3) !important;
+            transition: all 0.3s ease !important;
+            min-width: 100px !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
         }
         
         .tx-console-auto {
-            background-color: green !important;
+            background-color: #28a745 !important;
+            border: 2px solid #1e7e34 !important;
+        }
+        
+        .tx-console-auto:hover {
+            background-color: #218838 !important;
+            transform: translateY(-2px) !important;
         }
         
         .tx-console-manual {
-            background-color: red !important;
+            background-color: #dc3545 !important;
+            border: 2px solid #c82333 !important;
+        }
+        
+        .tx-console-manual:hover {
+            background-color: #c82333 !important;
+            transform: translateY(-2px) !important;
         }
         
         /* 日期選擇按鈕樣式 */
@@ -155,18 +176,76 @@
             transform: translate(-50%, -50%) !important;
             background: white !important;
             border: 2px solid #333 !important;
-            border-radius: 10px !important;
-            padding: 20px !important;
+            border-radius: 15px !important;
+            padding: 0 !important;
             z-index: 10000 !important;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
-            max-width: 90vw !important;
-            max-height: 90vh !important;
-            overflow-y: auto !important;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.3) !important;
+            width: 800px !important;
+            max-width: 95vw !important;
+            max-height: 85vh !important;
             font-family: Arial, sans-serif !important;
             color: #333 !important;
+            display: flex !important;
+            flex-direction: column !important;
         }
 
-        .tx-control-panel h2 {
+        .tx-control-panel-header {
+            padding: 20px 20px 0 20px !important;
+            border-radius: 15px 15px 0 0 !important;
+            flex-shrink: 0 !important;
+            position: relative !important;
+        }
+
+        .tx-control-panel-close {
+            position: absolute !important;
+            top: 15px !important;
+            right: 15px !important;
+            width: 30px !important;
+            height: 30px !important;
+            border: none !important;
+            background: #dc3545 !important;
+            color: white !important;
+            border-radius: 50% !important;
+            cursor: pointer !important;
+            font-size: 18px !important;
+            font-weight: bold !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: all 0.2s ease !important;
+        }
+
+        .tx-control-panel-close:hover {
+            background: #c82333 !important;
+            transform: scale(1.1) !important;
+        }
+
+        .tx-control-panel-content {
+            padding: 0 20px 20px 20px !important;
+            overflow-y: auto !important;
+            flex: 1 !important;
+            border-radius: 0 0 15px 15px !important;
+        }
+
+        .tx-control-panel-content::-webkit-scrollbar {
+            width: 8px !important;
+        }
+
+        .tx-control-panel-content::-webkit-scrollbar-track {
+            background: #f1f1f1 !important;
+            border-radius: 0 0 13px 0 !important;
+        }
+
+        .tx-control-panel-content::-webkit-scrollbar-thumb {
+            background: #c1c1c1 !important;
+            border-radius: 4px !important;
+        }
+
+        .tx-control-panel-content::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1 !important;
+        }
+
+        .tx-control-panel-header h2 {
             margin: 0 0 20px 0 !important;
             color: #007bff !important;
             text-align: center !important;
@@ -286,28 +365,29 @@
         /* 控制面板按鈕 */
         .tx-panel-button {
             position: fixed !important;
-            top: 50px !important;
-            left: 0 !important;
-            padding: 10px 15px !important;
+            bottom: 10px !important;
+            left: 10px !important;
+            padding: 12px 16px !important;
             background: #007bff !important;
             color: white !important;
-            border: none !important;
-            border-radius: 0 8px 8px 0 !important;
+            border: 2px solid #0056b3 !important;
+            border-radius: 8px !important;
             cursor: pointer !important;
             z-index: 9998 !important;
-            font-size: 14px !important;
+            font-size: 16px !important;
             font-weight: bold !important;
             box-shadow: 2px 2px 8px rgba(0,0,0,0.3) !important;
             transition: all 0.3s ease !important;
+            min-width: 80px !important;
         }
 
         .tx-panel-button:hover {
             background: #0056b3 !important;
-            transform: translateX(5px) !important;
+            transform: translateY(-2px) !important;
         }
 
         .tx-panel-button:active {
-            transform: translateX(3px) !important;
+            transform: translateY(-1px) !important;
         }
     `);
 
@@ -859,6 +939,9 @@
                 this.panel.remove();
             }
 
+            // 檢查並自動填入啟動時間
+            this._checkAndSetExecuteTime();
+
             this.panel = this._createPanel();
             document.body.appendChild(this.panel);
             this._populateValues();
@@ -871,74 +954,116 @@
             }
         }
 
+        _checkAndSetExecuteTime() {
+            const currentExecuteTime = CONFIG.EXECUTE_TIME;
+            
+            // 如果啟動時間為空或已過期，自動填入當下時間
+            if (!currentExecuteTime || currentExecuteTime.trim() === "") {
+                this._setCurrentTime();
+                return;
+            }
+
+            try {
+                const executeTime = new Date(currentExecuteTime);
+                const now = new Date();
+                
+                // 如果時間已過期，自動填入當下時間
+                if (executeTime <= now) {
+                    this._setCurrentTime();
+                }
+            } catch (e) {
+                // 如果時間格式錯誤，也自動填入當下時間
+                console.warn("啟動時間格式錯誤，自動設定為當前時間:", e);
+                this._setCurrentTime();
+            }
+        }
+
+        _setCurrentTime() {
+            const now = new Date();
+            // 格式化為 YYYY-MM-DDTHH:mm:ss (datetime-local 格式)
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            const timeString = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+            configManager.set('EXECUTE_TIME', timeString);
+        }
+
         _createPanel() {
             const panel = DOMUtils.createElement("div", {
                 className: "tx-control-panel",
             });
 
             panel.innerHTML = `
-                <div class="tx-control-section">
-                    <h3>📋 購票設定</h3>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">場次順序:</label>
-                        <input type="text" id="tx-buy-date-indexes" class="tx-control-input" placeholder="1,：代表選第一場>隨機">
-                        <div class="tx-control-help">以逗號分隔：1=第一場，2=第二場，-1=隨機</div>
-                    </div>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">座位群組:</label>
-                        <input type="text" id="tx-area-groups" class="tx-control-input" placeholder="2388,1388,">
-                        <div class="tx-control-help">依價位或區域分組，以逗號分隔：空白=隨機</div>
-                        <div class="tx-control-help">Ex.2388,1388,：先選2388>1388>隨機</div>
-                    </div>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">座位關鍵字:</label>
-                        <input type="text" id="tx-area-seats" class="tx-control-input" placeholder="205 2388,204,">
-                        <div class="tx-control-help">以逗號分隔：空格=同時包含，空白=隨機</div>
-                        <div class="tx-control-help">Ex.205 2388,204,：先選205及2388皆有的座位>204>隨機</div>
-                    </div>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">排除關鍵字:</label>
-                        <input type="text" id="tx-exclude-keywords" class="tx-control-input" placeholder="輪椅,身障,障礙,Restricted,遮蔽,視線不完整">
-                        <div class="tx-control-help">包含這些關鍵字的座位將被排除，以逗號分隔</div>
-                    </div>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">購買張數:</label>
-                        <input type="number" id="tx-buy-count" class="tx-control-input" min="1" max="6" value="2">
-                        <div class="tx-control-help">若此數量無法選擇則自動選最大值</div>
-                    </div>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">付款方式:</label>
-                        <select id="tx-pay-type" class="tx-control-select">
-                            <option value="A">ATM 轉帳</option>
-                            <option value="C">信用卡</option>
-                        </select>
-                    </div>
+                <div class="tx-control-panel-header">
+                    <h2>⚙️ 設定</h2>
+                    <button class="tx-control-panel-close" id="tx-panel-close">×</button>
                 </div>
-
-                <div class="tx-control-section">
-                    <h3>⏰ 執行時間</h3>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">啟動時間:(需設定開票"前"啟動)</label>
-                        <input type="time" id="tx-execute-time" class="tx-control-input" step="1">
-                        <div class="tx-control-help">格式: HH:mm:ss，若當前時間已過則視為明天，空白=立即執行</div>
+                <div class="tx-control-panel-content">
+                    <div class="tx-control-section">
+                        <h3>📋 購票設定</h3>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">場次順序:</label>
+                            <input type="text" id="tx-buy-date-indexes" class="tx-control-input" placeholder="1,：代表選第一場>隨機">
+                            <div class="tx-control-help">以逗號分隔：1=第一場，2=第二場，-1=隨機</div>
+                        </div>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">座位群組:</label>
+                            <input type="text" id="tx-area-groups" class="tx-control-input" placeholder="2388,1388,">
+                            <div class="tx-control-help">依價位或區域分組，以逗號分隔：空白=隨機</div>
+                            <div class="tx-control-help">Ex.2388,1388,：先選2388>1388>隨機</div>
+                        </div>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">座位關鍵字:</label>
+                            <input type="text" id="tx-area-seats" class="tx-control-input" placeholder="205 2388,204,">
+                            <div class="tx-control-help">以逗號分隔：空格=同時包含，空白=隨機</div>
+                            <div class="tx-control-help">Ex.205 2388,204,：先選205及2388皆有的座位>204>隨機</div>
+                        </div>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">排除關鍵字:</label>
+                            <input type="text" id="tx-exclude-keywords" class="tx-control-input" placeholder="輪椅,身障,障礙,Restricted,遮蔽,視線不完整">
+                            <div class="tx-control-help">包含這些關鍵字的座位將被排除，以逗號分隔</div>
+                        </div>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">購買張數:</label>
+                            <input type="number" id="tx-buy-count" class="tx-control-input" min="1" max="6" value="2">
+                            <div class="tx-control-help">若此數量無法選擇則自動選最大值</div>
+                        </div>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">付款方式:</label>
+                            <select id="tx-pay-type" class="tx-control-select">
+                                <option value="A">ATM 轉帳</option>
+                                <option value="C">信用卡</option>
+                            </select>
+                        </div>
                     </div>
-                </div>
 
-                <div class="tx-control-section">
-                    <h3>🏦 銀行設定</h3>
-                    <div class="tx-control-row">
-                        <label class="tx-control-label">銀行卡號:</label>
-                        <textarea id="tx-bank-codes" class="tx-control-textarea" placeholder='{"國泰世華": "40637634", "中國信託": "424162"}'></textarea>
-                        <div class="tx-control-help">JSON 格式，銀行名稱對應卡號</div>
+                    <div class="tx-control-section">
+                        <h3>⏰ 執行時間</h3>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">啟動時間:(絕對時間，已過則立即啟動)</label>
+                            <input type="datetime-local" id="tx-execute-time" class="tx-control-input" step="1">
+                            <div class="tx-control-help">格式: YYYY-MM-DD HH:mm:ss，若時間已過則立即執行，空白=立即執行</div>
+                        </div>
                     </div>
-                </div>
 
+                    <div class="tx-control-section">
+                        <h3>🏦 銀行設定</h3>
+                        <div class="tx-control-row">
+                            <label class="tx-control-label">銀行卡號:</label>
+                            <textarea id="tx-bank-codes" class="tx-control-textarea" placeholder='{"國泰世華": "40637634", "中國信託": "424162"}'></textarea>
+                            <div class="tx-control-help">JSON 格式，銀行名稱對應卡號</div>
+                        </div>
+                    </div>
 
-
-                <div class="tx-control-buttons">
-                    <button class="tx-control-button tx-control-button-save" id="tx-save-config">💾 儲存設定</button>
-                    <button class="tx-control-button tx-control-button-reset" id="tx-reset-config">🔄 重設為預設</button>
-                    <button class="tx-control-button tx-control-button-cancel" id="tx-cancel-config">❌ 取消</button>
+                    <div class="tx-control-buttons">
+                        <button class="tx-control-button tx-control-button-save" id="tx-save-config">💾 儲存設定</button>
+                        <button class="tx-control-button tx-control-button-reset" id="tx-reset-config">🔄 重設為預設</button>
+                        <button class="tx-control-button tx-control-button-cancel" id="tx-cancel-config">❌ 取消</button>
+                    </div>
                 </div>
             `;
 
@@ -960,6 +1085,11 @@
             });
 
             panel.querySelector("#tx-cancel-config").addEventListener("click", () => {
+                this.hidePanel();
+            });
+
+            // 關閉按鈕事件
+            panel.querySelector("#tx-panel-close").addEventListener("click", () => {
                 this.hidePanel();
             });
 
@@ -1014,7 +1144,7 @@
 
                 if (warningFields.length > 0) {
                     const fieldList = warningFields.map(field => `• ${field}`).join('\n');
-                    const confirmMessage = `⚠️ 警告！\n\n以下欄位未以逗號結尾，代表您不打算以"至少有票"為最終備案：\n${fieldList}\n\n請確認是否儲存設定？`;
+                    const confirmMessage = `⚠️ 警告！\n\n以下欄位未以逗號結尾，代表您並未打算將『至少有票』作為最終備案：\n${fieldList}\n\n請確認是否繼續儲存設定？`;
                     if (!confirm(confirmMessage)) {
                         return;
                     }
@@ -1163,18 +1293,14 @@
             return div;
         }
 
-        static _updateConsoleText(consoleDiv, isAutoMode, isLoggedIn, isToggled = false) {
-            console.log(`自動模式: ${isAutoMode}, 切換: ${isToggled}`);
-
-            if (isToggled) {
-                isAutoMode = !isAutoMode;
-            }
+        static _updateConsoleText(consoleDiv, isAutoMode, isLoggedIn, isClick = false) {
+            console.log(`自動模式: ${isAutoMode}, 切換模式: ${isClick}`);
 
             if (isAutoMode) {
                 consoleDiv.className = "tx-console tx-console-auto";
                 if (isLoggedIn) {
-                    consoleDiv.textContent = "🤖";
-                    if (isToggled) {
+                    consoleDiv.innerHTML = "<span>🤖</span><span>自動模式</span>";
+                    if (isClick) {
                         if (CONFIG.EXECUTE_TIME && CONFIG.EXECUTE_TIME.length > 0) {
                             this._startCountdown(consoleDiv);
                         } else {
@@ -1182,16 +1308,16 @@
                         }
                     }
                 } else {
-                    consoleDiv.textContent = "🤖 未登入";
-                    if (isToggled) {
+                    consoleDiv.innerHTML = "<span>🤖</span><span>未登入</span>";
+                    if (isClick) {
                         const loginBtn = DOMUtils.$(".account-login a");
                         if (loginBtn) loginBtn.click();
                     }
                 }
             } else {
                 consoleDiv.className = "tx-console tx-console-manual";
-                consoleDiv.textContent = isLoggedIn ? "💪" : "💪 未登入";
-                if (isToggled && appState.countdownInterval) {
+                consoleDiv.innerHTML = isLoggedIn ? "<span>💪</span><span>手動模式</span>" : "<span>💪</span><span>未登入</span>";
+                if (isClick && appState.countdownInterval) {
                     clearInterval(appState.countdownInterval);
                 }
             }
@@ -1206,52 +1332,46 @@
                 return;
             }
 
-            // 解析時間字串 (HH:mm:ss)
-            const timeParts = executeTimeStr.split(":");
-            if (timeParts.length !== 3) {
-                console.error("時間格式錯誤，應為 HH:mm:ss");
+            // 解析日期時間字串 (YYYY-MM-DD HH:mm:ss 或 YYYY-MM-DDTHH:mm:ss)
+            const executeTime = new Date(executeTimeStr);
+            
+            // 檢查日期是否有效
+            if (isNaN(executeTime.getTime())) {
+                console.error("時間格式錯誤，應為 YYYY-MM-DD HH:mm:ss 或 YYYY-MM-DDTHH:mm:ss");
                 window.location.reload(true);
                 return;
             }
 
             const now = new Date();
-            const executeTime = new Date();
-            executeTime.setHours(parseInt(timeParts[0], 10));
-            executeTime.setMinutes(parseInt(timeParts[1], 10));
-            executeTime.setSeconds(parseInt(timeParts[2], 10));
-            executeTime.setMilliseconds(0);
-
-            // 如果設定時間已過，則設為明天同一時間
-            if (executeTime <= now) {
-                executeTime.setDate(executeTime.getDate() + 1);
-            }
-
             let diff = executeTime - now;
 
-            if (diff > 0) {
-                let seconds = Math.floor(diff / 1000);
-                appState.countdownInterval = setInterval(() => {
-                    seconds--;
-                    if (seconds <= 0) {
-                        clearInterval(appState.countdownInterval);
-                        window.location.reload(true);
-                    } else {
-                        const hours = Math.floor(seconds / 3600);
-                        const minutes = Math.floor((seconds % 3600) / 60);
-                        const secs = seconds % 60;
-
-                        if (hours > 0) {
-                            consoleDiv.textContent = `🤖 ${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-                        } else if (minutes > 0) {
-                            consoleDiv.textContent = `🤖 ${minutes}:${secs.toString().padStart(2, "0")}`;
-                        } else {
-                            consoleDiv.textContent = `🤖 ${secs} 秒`;
-                        }
-                    }
-                }, 1000);
-            } else {
+            // 如果設定時間已過，則立即執行
+            if (diff <= 0) {
+                console.log("設定時間已過，立即執行");
                 window.location.reload(true);
+                return;
             }
+
+            let seconds = Math.floor(diff / 1000);
+            appState.countdownInterval = setInterval(() => {
+                seconds--;
+                if (seconds <= 0) {
+                    clearInterval(appState.countdownInterval);
+                    window.location.reload(true);
+                } else {
+                    const hours = Math.floor(seconds / 3600);
+                    const minutes = Math.floor((seconds % 3600) / 60);
+                    const secs = seconds % 60;
+
+                    if (hours > 0) {
+                        consoleDiv.innerHTML = `<span>🤖</span><span>倒數 ${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}</span>`;
+                    } else if (minutes > 0) {
+                        consoleDiv.innerHTML = `<span>🤖</span><span>倒數 ${minutes}:${secs.toString().padStart(2, "0")}</span>`;
+                    } else {
+                        consoleDiv.innerHTML = `<span>🤖</span><span>倒數 ${secs} 秒</span>`;
+                    }
+                }
+            }, 1000);
         }
     }
 
