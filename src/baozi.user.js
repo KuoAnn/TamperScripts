@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.3.3
+// @version      1.3.4
 // @description  包子漫畫增強閱讀器：簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -135,22 +135,25 @@
 		const localList = getLocalReads(comicKey);
 		const localSet = new Set(localList.map((x) => `${x.ss}-${x.cs}`));
 		const remoteSet = new Set((Array.isArray(remoteList) ? remoteList : []).map((x) => `${x.ss}-${x.cs}`));
-		const intersectKeys = [...localSet].filter((k) => remoteSet.has(k));
-		const intersected = intersectKeys.map((k) => {
+
+		// 聯集 key
+		const unionKeys = new Set([...localSet, ...remoteSet]);
+		const unioned = [...unionKeys].map((k) => {
 			const [ss, cs] = k.split('-');
 			return { ss, cs };
 		});
-		// 覆寫本地快取
-		setLocalReads(comicKey, intersected);
 
-		// 雲端同步：僅在雲端資料與交集不同時才同步，且交集不為空才執行
+		// 覆寫本地快取
+		setLocalReads(comicKey, unioned);
+
+		// 雲端同步：僅在雲端資料與聯集不同時才同步，且聯集不為空才執行
 		if (getApiToken() && typeof apiClear === 'function' && typeof apiSave === 'function') {
-			const intersectSet = new Set(intersected.map((x) => `${x.ss}-${x.cs}`));
+			const unionSet = new Set(unioned.map((x) => `${x.ss}-${x.cs}`));
 			let isSame = true;
-			if (intersectSet.size !== remoteSet.size) {
+			if (unionSet.size !== remoteSet.size) {
 				isSame = false;
 			} else {
-				for (const k of intersectSet) {
+				for (const k of unionSet) {
 					if (!remoteSet.has(k)) {
 						isSame = false;
 						break;
@@ -158,20 +161,20 @@
 				}
 			}
 
-			// 僅當交集不為空且雲端資料與交集不同時才同步
-			if (!isSame && intersected.length > 0) {
+			// 僅當聯集不為空且雲端資料與聯集不同時才同步
+			if (!isSame && unioned.length > 0) {
 				apiClear(comicKey)
-					.then(() => Promise.all(intersected.map((it) => apiSave({ comicKey, ss: it.ss, cs: it.cs }))))
-					.catch((e) => {
+					.then(() => Promise.all(unioned.map((it) => apiSave({ comicKey, ss: it.ss, cs: it.cs })))).
+					catch((e) => {
 						console.warn('remote sync failed:', e);
 						if (typeof showAlert === 'function') {
 							showAlert('雲端同步失敗: ' + (e && e.message ? e.message : e), 2500);
 						}
 					});
 			}
-			// 若交集為空，僅本地清空，不動雲端
+			// 若聯集為空，僅本地清空，不動雲端
 		}
-		return intersected;
+		return unioned;
 	}
 
 	// ---------------------------------------------------------------------------
@@ -573,15 +576,15 @@
 						return;
 					}
 					const remoteList = Array.isArray(resp.rs) ? resp.rs : [];
-					const intersected = intersectAndSync(key, remoteList);
-					// 先清掉舊標記再標示交集（避免顯示超出交集的本地項）
+					const unioned = intersectAndSync(key, remoteList);
+					// 先清掉舊標記再標示聯集（避免顯示超出聯集的本地項）
 					const readChapters = safeQuerySelectorAll('.read-chapter');
 					readChapters.forEach((chapter) => chapter.classList.remove('read-chapter'));
-					intersected.forEach((value) => {
+					unioned.forEach((value) => {
 						const links = safeQuerySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
 						links.forEach((ele) => ele.classList.add('read-chapter'));
 					});
-					showAlert(`(同步) 已標示 ${intersected.length} 個已讀章節`, 1500);
+					showAlert(`(同步) 已標示 ${unioned.length} 個已讀章節\n[${unioned.map(x=>x.ss+'-'+x.cs).join(', ')}]`, 2500);
 				})
 				.catch((error) => {
 					console.error('Show last read error:', error);
