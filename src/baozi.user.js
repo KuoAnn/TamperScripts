@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.3.1
+// @version      1.3.2
 // @description  包子漫畫增強閱讀器：簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -102,6 +102,9 @@
 			GM_setValue(CACHE_PREFIX + comicKey, JSON.stringify(list || []));
 		} catch (e) {
 			console.warn('setLocalReads failed', e);
+			if (typeof showAlert === 'function') {
+				showAlert('本地紀錄儲存失敗: ' + (e && e.message ? e.message : e), 2500);
+			}
 		}
 	}
 
@@ -155,7 +158,12 @@
 			if (!isSame) {
 				apiClear(comicKey)
 					.then(() => Promise.all(intersected.map((it) => apiSave({ comicKey, ss: it.ss, cs: it.cs }))))
-					.catch((e) => console.warn('remote sync failed:', e));
+					.catch((e) => {
+						console.warn('remote sync failed:', e);
+						if (typeof showAlert === 'function') {
+							showAlert('雲端同步失敗: ' + (e && e.message ? e.message : e), 2500);
+						}
+					});
 			}
 		}
 		return intersected;
@@ -292,6 +300,9 @@
 			return JSON.parse(raw);
 		} catch (error) {
 			console.warn('JSON parse error:', error);
+			if (typeof showAlert === 'function') {
+				showAlert('JSON 解析錯誤: ' + (error && error.message ? error.message : error), 2000);
+			}
 			return defaultValue;
 		}
 	}
@@ -438,6 +449,9 @@
 			alertDiv = GM_addElement(document.body, 'div', { class: 'alertContainer' });
 		} catch (error) {
 			console.error('Failed to initialize alert system:', error);
+			if (typeof showAlert === 'function') {
+				showAlert('提醒系統初始化失敗: ' + (error && error.message ? error.message : error), 2500);
+			}
 		}
 	}
 
@@ -480,6 +494,10 @@
 			}, timeout);
 		} catch (error) {
 			console.error('Alert display error:', error, 'Message:', message);
+			if (typeof showAlert === 'function' && message !== '顯示錯誤訊息失敗') {
+				// 避免遞迴
+				setTimeout(() => alert('顯示錯誤訊息失敗: ' + (error && error.message ? error.message : error)), 100);
+			}
 		}
 	}
 
@@ -515,6 +533,9 @@
 		// 再同步到雲端（不阻塞 UI）
 		apiSave({ comicKey: key, ...readData }).catch((error) => {
 			console.error('Save read progress (remote) error:', error);
+			if (typeof showAlert === 'function') {
+				showAlert('雲端儲存失敗: ' + (error && error.message ? error.message : error), 2000);
+			}
 			// 失敗不回滾本地，等下次交集同步會修正
 		});
 	}
@@ -562,7 +583,7 @@
 				})
 				.catch((error) => {
 					console.error('Show last read error:', error);
-					showAlert('讀取雲端紀錄失敗', 2000);
+					showAlert('讀取雲端紀錄失敗 ' + error, 2000);
 				});
 
 			// 新增清除按鈕
