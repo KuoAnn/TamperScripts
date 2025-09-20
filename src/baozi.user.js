@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.3.1
 // @description  包子漫畫增強閱讀器：簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -72,6 +72,93 @@
 	}
 	function setApiToken(v) {
 		GM_setValue(API.TOKEN_KEY, String(v || ''));
+	}
+
+	// ---------------------------------------------------------------------------
+	// Local Cache for read records
+	// Key format: baozi_cache_<comicKey> => Array<{ss:string, cs:string}>
+	// ---------------------------------------------------------------------------
+	const CACHE_PREFIX = 'baozi_cache_';
+
+	/**
+	 * 取得本地快取的閱讀紀錄
+	 * @param {string} comicKey
+	 * @returns {Array<{ss:string, cs:string}>}
+	 */
+	function getLocalReads(comicKey) {
+		const raw = GM_getValue(CACHE_PREFIX + comicKey);
+		if (Array.isArray(raw)) return raw;
+		const arr = typeof raw === 'string' ? safeJSONParse(raw, null) : null;
+		return Array.isArray(arr) ? arr : [];
+	}
+
+	/**
+	 * 設定本地快取的閱讀紀錄
+	 * @param {string} comicKey
+	 * @param {Array<{ss:string, cs:string}>} list
+	 */
+	function setLocalReads(comicKey, list) {
+		try {
+			GM_setValue(CACHE_PREFIX + comicKey, JSON.stringify(list || []));
+		} catch (e) {
+			console.warn('setLocalReads failed', e);
+		}
+	}
+
+	/**
+	 * 新增一筆至本地快取（若不存在）
+	 * @param {string} comicKey
+	 * @param {{ss:string, cs:string}} item
+	 */
+	function addLocalRead(comicKey, item) {
+		const list = getLocalReads(comicKey);
+		const key = `${item.ss}-${item.cs}`;
+		const exists = list.some((x) => `${x.ss}-${x.cs}` === key);
+		if (!exists) {
+			list.push({ ss: String(item.ss), cs: String(item.cs) });
+			setLocalReads(comicKey, list);
+		}
+	}
+
+	/**
+	 * 以本地與雲端交集為準，回寫雙方
+	 * @param {string} comicKey
+	 * @param {Array<{ss:string, cs:string}>} remoteList
+	 * @returns {Array<{ss:string, cs:string}>} intersected
+	 */
+	function intersectAndSync(comicKey, remoteList) {
+		const localList = getLocalReads(comicKey);
+		const localSet = new Set(localList.map((x) => `${x.ss}-${x.cs}`));
+		const remoteSet = new Set((Array.isArray(remoteList) ? remoteList : []).map((x) => `${x.ss}-${x.cs}`));
+		const intersectKeys = [...localSet].filter((k) => remoteSet.has(k));
+		const intersected = intersectKeys.map((k) => {
+			const [ss, cs] = k.split('-');
+			return { ss, cs };
+		});
+		// 覆寫兩邊
+		setLocalReads(comicKey, intersected);
+		// 雲端同步：僅在雲端資料與交集不同時才清空+回寫，降低呼叫次數
+		if (getApiToken() && typeof apiClear === 'function' && typeof apiSave === 'function') {
+			const intersectSet = new Set(intersected.map((x) => `${x.ss}-${x.cs}`));
+			let isSame = true;
+			if (intersectSet.size !== remoteSet.size) {
+				isSame = false;
+			} else {
+				for (const k of intersectSet) {
+					if (!remoteSet.has(k)) {
+						isSame = false;
+						break;
+					}
+				}
+			}
+
+			if (!isSame) {
+				apiClear(comicKey)
+					.then(() => Promise.all(intersected.map((it) => apiSave({ comicKey, ss: it.ss, cs: it.cs }))))
+					.catch((e) => console.warn('remote sync failed:', e));
+			}
+		}
+		return intersected;
 	}
 
 	// ---------------------------------------------------------------------------
@@ -187,6 +274,7 @@
 	let loader;
 	let isLoaded = false;
 	let apiWarned = false;
+	let tokenPrompted = false; // 單頁僅提示一次
 
 	// ---------------------------------------------------------------------------
 	// Utility Functions
@@ -280,15 +368,25 @@
 	function apiPost(ac, payload = {}) {
 		return new Promise((resolve, reject) => {
 			const endpoint = API.ENDPOINT;
-			const token = getApiToken();
-			if (!token) {
-				if (!apiWarned) {
-					apiWarned = true;
-					showAlert('未設定 API TOKEN，閱讀紀錄將無法同步', 3000);
-					console.warn('Baozi API config missing: 未設定 API TOKEN. 請於使用者選單設定。');
+			let token = getApiToken();
+
+			// 若未設定 Token，立即提示使用者輸入（僅提示一次）
+			if (!token && !tokenPrompted) {
+				tokenPrompted = true;
+				const v = prompt('請輸入 API Token（留空則以離線模式）', '');
+				if (v && v.trim()) {
+					setApiToken(v.trim());
+					token = v.trim();
+					showAlert('已設定 API Token', 1500);
+				} else {
+					showAlert('未設定 API Token，將以離線模式運作', 2000);
 				}
+			}
+
+			if (!token) {
 				return resolve({ rc: -1, rm: 'no-token' });
 			}
+
 			try {
 				GM_xmlhttpRequest({
 					method: 'POST',
@@ -410,14 +508,15 @@
 			url: url,
 		};
 
-		apiSave({ comicKey: key, ...readData })
-			.then(() => {
-				showAlert(`已讀 ${readData.ss}-${readData.cs}`, 2000);
-			})
-			.catch((error) => {
-				console.error('Save read progress error:', error);
-				showAlert('儲存進度失敗', 2000);
-			});
+		// 先寫入本地快取，確保後續列表能即時顯示
+		addLocalRead(key, { ss: readData.ss, cs: readData.cs });
+		showAlert(`已讀 ${readData.ss}-${readData.cs}`, 1200);
+
+		// 再同步到雲端（不阻塞 UI）
+		apiSave({ comicKey: key, ...readData }).catch((error) => {
+			console.error('Save read progress (remote) error:', error);
+			// 失敗不回滾本地，等下次交集同步會修正
+		});
 	}
 
 	/**
@@ -432,19 +531,34 @@
 				return;
 			}
 
+			// 1) 先用本地快取立即標示
+			const localList = getLocalReads(key);
+			if (localList.length > 0) {
+				localList.forEach((value) => {
+					const links = safeQuerySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
+					links.forEach((ele) => ele.classList.add('read-chapter'));
+				});
+				showAlert(`(本機) 已標示 ${localList.length} 個已讀章節`, 1200);
+			}
+
+			// 2) 再讀雲端並以交集為準，同步雙方與 UI
 			apiList(key)
 				.then((resp) => {
-					const list = Array.isArray(resp.rs) ? resp.rs : [];
-					if (list.length === 0) {
-						showAlert('無閱讀紀錄', 1500);
+					if (!resp || resp.rc !== 0) {
+						// 無 Token 或雲端回應非成功，不進行交集同步，保留本地顯示
+						showAlert('未同步雲端（無 Token 或錯誤）', 1200);
 						return;
 					}
-					// 標示已讀章節
-					list.forEach((value) => {
+					const remoteList = Array.isArray(resp.rs) ? resp.rs : [];
+					const intersected = intersectAndSync(key, remoteList);
+					// 先清掉舊標記再標示交集（避免顯示超出交集的本地項）
+					const readChapters = safeQuerySelectorAll('.read-chapter');
+					readChapters.forEach((chapter) => chapter.classList.remove('read-chapter'));
+					intersected.forEach((value) => {
 						const links = safeQuerySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
 						links.forEach((ele) => ele.classList.add('read-chapter'));
 					});
-					showAlert(`已標示 ${list.length} 個已讀章節`, 2000);
+					showAlert(`(同步) 已標示 ${intersected.length} 個已讀章節`, 1500);
 				})
 				.catch((error) => {
 					console.error('Show last read error:', error);
@@ -478,16 +592,17 @@
 			const comicTitle = titleEle?.textContent?.replace(/\n/g, '').trim() || '此漫畫';
 
 			if (confirm(`確定要清除 ${comicTitle} 的閱讀紀錄嗎？`)) {
-				apiClear(key)
-					.then(() => {
-						showAlert('已清除閱讀紀錄');
-						const readChapters = safeQuerySelectorAll('.read-chapter');
-						readChapters.forEach((chapter) => chapter.classList.remove('read-chapter'));
-					})
-					.catch((error) => {
-						console.error('Clear reads error:', error);
-						showAlert('清除失敗', 2000);
-					});
+				// 先清本地
+				setLocalReads(key, []);
+				// UI 清除
+				const readChapters = safeQuerySelectorAll('.read-chapter');
+				readChapters.forEach((chapter) => chapter.classList.remove('read-chapter'));
+				showAlert('已清除閱讀紀錄');
+				// 再清雲端
+				apiClear(key).catch((error) => {
+					console.error('Clear reads (remote) error:', error);
+					showAlert('雲端清除失敗', 2000);
+				});
 			}
 		} catch (error) {
 			console.error('Clear reads error:', error);
