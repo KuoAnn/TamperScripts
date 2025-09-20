@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.3.2
+// @version      1.3.3
 // @description  包子漫畫增強閱讀器：簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -125,6 +125,8 @@
 
 	/**
 	 * 以本地與雲端交集為準，回寫雙方
+	 * 修正：當交集為空時僅本地清空，不呼叫 apiClear/apiSave，避免雲端被清空。
+	 * 交集不為空時才進行雲端同步。
 	 * @param {string} comicKey
 	 * @param {Array<{ss:string, cs:string}>} remoteList
 	 * @returns {Array<{ss:string, cs:string}>} intersected
@@ -138,9 +140,10 @@
 			const [ss, cs] = k.split('-');
 			return { ss, cs };
 		});
-		// 覆寫兩邊
+		// 覆寫本地快取
 		setLocalReads(comicKey, intersected);
-		// 雲端同步：僅在雲端資料與交集不同時才清空+回寫，降低呼叫次數
+
+		// 雲端同步：僅在雲端資料與交集不同時才同步，且交集不為空才執行
 		if (getApiToken() && typeof apiClear === 'function' && typeof apiSave === 'function') {
 			const intersectSet = new Set(intersected.map((x) => `${x.ss}-${x.cs}`));
 			let isSame = true;
@@ -155,7 +158,8 @@
 				}
 			}
 
-			if (!isSame) {
+			// 僅當交集不為空且雲端資料與交集不同時才同步
+			if (!isSame && intersected.length > 0) {
 				apiClear(comicKey)
 					.then(() => Promise.all(intersected.map((it) => apiSave({ comicKey, ss: it.ss, cs: it.cs }))))
 					.catch((e) => {
@@ -165,6 +169,7 @@
 						}
 					});
 			}
+			// 若交集為空，僅本地清空，不動雲端
 		}
 		return intersected;
 	}
@@ -432,9 +437,6 @@
 	}
 	function apiClear(comicKey) {
 		return apiPost('clear', { comicKey });
-	}
-	function apiClearAll() {
-		return apiPost('clearAll', {});
 	}
 
 	// ---------------------------------------------------------------------------
