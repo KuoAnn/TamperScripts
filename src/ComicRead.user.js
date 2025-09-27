@@ -11,6 +11,7 @@
 // @match           *://*.dm5.com/*
 // @match           *://*.onemoreplace.tw/*
 // @match           *://*.manhuagui.com/*
+// @match           *://*.wnacg.com/*
 // @connect         self
 // @connect         127.0.0.1
 // @connect         jsdelivr.net
