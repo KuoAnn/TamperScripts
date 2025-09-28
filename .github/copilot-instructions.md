@@ -24,6 +24,7 @@
 - 用 `GM_registerMenuCommand` 增加自訂選單，方便用戶操作。
 - 若腳本有需要設定帳號或密碼，必須使用 `GM_registerMenuCommand` 讓用戶可隨時開啟設定介面。
 - 如需偵測單頁應用 URL 變化，加入 `@grant window.onurlchange` 並監聽 `urlchange` 事件。
+- 相關 Tampermonkey script API 可參考本機檔案 `docs/SPEC_en.md`
 
 ## 維護與發佈
 - 腳本更新時，務必同步更新 `@version`，確保 Tampermonkey 能自動偵測並提示用戶升級。
