@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.3.4
-// @description  包子漫畫增強閱讀器：簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
+// @version      1.4.0
+// @description  包子漫畫增強閱讀器：支援 twmanga、baozimh、colamanga 三站點，提供簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @match        https://www.baozimh.com/comic/*
+// @match        https://www.colamanga.com/manga-*/*/*.html
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=twmanga.com
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/baozi.user.js
@@ -24,12 +25,17 @@
  * Baozi Comic Reader - 包子漫畫增強閱讀器
  * 提供簡化介面、閱讀紀錄管理、快捷操作等功能
  *
+ * 支援站點：
+ * - twmanga.com: 完整功能（閱讀紀錄、快捷操作、自動翻頁）
+ * - baozimh.com: 完整功能（介面清理、閱讀紀錄、章節排序）
+ * - colamanga.com: 快捷操作與翻頁功能
+ *
  * 功能特色：
- * - 智能閱讀進度管理
+ * - 智能閱讀進度管理（twmanga、baozimh）
  * - 多種快捷鍵操作 (W/S 滾動, A/D 翻章, F 全螢幕)
  * - 自動翻頁與滑輪支援
  * - 移動裝置觸控操作
- * - 介面清理與章節排序
+ * - 介面清理與章節排序（baozimh）
  */
 
 (function () {
@@ -641,9 +647,55 @@
 	// ---------------------------------------------------------------------------
 
 	/**
+	 * 取得 Colamanga 下一頁 URL
+	 * 格式: /manga-xxx/1/414.html -> /manga-xxx/1/415.html
+	 */
+	function getColamangaNextPage() {
+		const url = window.location.pathname;
+		const match = url.match(/^(.+\/)(\d+)(\.html)$/);
+		if (match) {
+			const [, basePath, pageNum, extension] = match;
+			const nextPage = parseInt(pageNum, 10) + 1;
+			return `${basePath}${nextPage}${extension}`;
+		}
+		return null;
+	}
+
+	/**
+	 * 取得 Colamanga 上一頁 URL
+	 * 格式: /manga-xxx/1/414.html -> /manga-xxx/1/413.html
+	 */
+	function getColamangaPrevPage() {
+		const url = window.location.pathname;
+		const match = url.match(/^(.+\/)(\d+)(\.html)$/);
+		if (match) {
+			const [, basePath, pageNum, extension] = match;
+			const prevPage = parseInt(pageNum, 10) - 1;
+			if (prevPage >= 0) {
+				return `${basePath}${prevPage}${extension}`;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * 點擊下一章
 	 */
 	function clickNext() {
+		const hostname = window.location.hostname;
+		
+		// Colamanga 使用 URL 跳轉方式
+		if (hostname === 'www.colamanga.com') {
+			const nextUrl = getColamangaNextPage();
+			if (nextUrl) {
+				window.location.href = nextUrl;
+			} else {
+				showAlert('已是最後一頁', 1500);
+			}
+			return;
+		}
+		
+		// 其他站點使用按鈕點擊方式
 		const nextBtn = safeQuerySelector(SELECTORS.NEXT_CHAPTER);
 		if (nextBtn) {
 			nextBtn.click();
@@ -656,6 +708,20 @@
 	 * 點擊上一章
 	 */
 	function clickPrev() {
+		const hostname = window.location.hostname;
+		
+		// Colamanga 使用 URL 跳轉方式
+		if (hostname === 'www.colamanga.com') {
+			const prevUrl = getColamangaPrevPage();
+			if (prevUrl) {
+				window.location.href = prevUrl;
+			} else {
+				showAlert('已是第一頁', 1500);
+			}
+			return;
+		}
+		
+		// 其他站點使用按鈕點擊方式
 		const prevBtn = safeQuerySelector(SELECTORS.PREV_CHAPTER);
 		if (prevBtn) {
 			prevBtn.click();
@@ -952,6 +1018,20 @@
 	}
 
 	/**
+	 * 處理 Colamanga 站點
+	 * 僅啟用快捷操作和翻頁功能
+	 */
+	function handleColamanga() {
+		try {
+			addHotkey();
+			showAlert('Colamanga 快捷鍵已啟用', 1500);
+		} catch (error) {
+			console.error('Colamanga handler error:', error);
+			showAlert('Colamanga 初始化失敗', 2000);
+		}
+	}
+
+	/**
 	 * 添加用戶選單命令
 	 */
 	function addUserMenuCommands() {
@@ -1004,6 +1084,8 @@
 				handleTwmanga();
 			} else if (hostname === 'www.baozimh.com') {
 				handleBaozimh();
+			} else if (hostname === 'www.colamanga.com') {
+				handleColamanga();
 			} else {
 				console.warn('Unsupported hostname:', hostname);
 			}
