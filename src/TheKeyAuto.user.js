@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1004.1700
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示預約清單,支援黃牌簽到/取消操作
+// @version      1.25.1004.1730
+// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單,支援黃牌簽到/取消操作
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -23,7 +23,7 @@
 	GM_addStyle(`
 		.booking-list-table {
 			width: 100%;
-			margin-top: 20px;
+			margin-top: 12px;
 			border-collapse: collapse;
 			background: white;
 			box-shadow: 0 1px 3px rgba(0,0,0,0.12);
@@ -402,94 +402,71 @@
 	 */
 	function createBookListTable(data) {
 		if (!data || !data.aaData || !Array.isArray(data.aaData) || data.aaData.length === 0) {
-			return {
-				future: '<div class="booking-list-container"><p>無預約紀錄</p></div>',
-				past: '<div class="booking-list-container"><p>無預約紀錄</p></div>'
-			};
+			return '<div class="booking-list-container"><p>無預約紀錄</p></div>';
 		}
 
 		// 狀態名稱對應
 		const statusMap = {
-			reserved: "已預約",
+			reserved: "📅預約",
 			check_in: "✅簽到",
 			late_cancel: "⚠️黃牌",
-			punished: "黃牌不罰",
+			punished: "🟨撤銷",
 			cancel: "❌取消",
-			waiting: "候補中",
-			absent: "缺席",
+			waiting: "😢候補",
 		};
 
-		// 依日期分組
-		const today = new Date();
-		today.setHours(0,0,0,0);
-		const futureRecords = [];
-		const pastRecords = [];
-
+		let html = '<div class="booking-list-container">';
+		html += '<table class="booking-list-table">';
+		html += "<thead><tr>";
+		html += "<th>狀態</th>";
+		html += "<th>日期/時間</th>";
+		html += "<th>課程/教練</th>";
+		html += "<th>教室</th>";
+		html += "</tr></thead>";
+		html += "<tbody>";
+		
 		data.aaData.forEach((record) => {
-			// class_day 格式 yyyy-mm-dd
-			const recordDate = new Date(record.class_day);
-			recordDate.setHours(0,0,0,0);
-			if (recordDate > today) {
-				futureRecords.push(record);
-			} else {
-				pastRecords.push(record);
+			const statusClass = `status-${record.status_name}`;
+			const statusText = statusMap[record.status_name] || record.status_name;
+			const roomName = (record.room_name || '').replace(/教室/g, '');
+			const rowClass = record.status_name === 'late_cancel' ? 'late-cancel-row' : '';
+			
+			// 日期/時間格式 MM/DD HH:mm
+			let mmdd = record.class_day;
+			if (/^\d{4}-\d{2}-\d{2}$/.test(record.class_day)) {
+				const parts = record.class_day.split('-');
+				mmdd = parts[1] + '/' + parts[2];
 			}
+			
+			// class_time 可能是 HH:mm:ss 或 HH:mm
+			let hhmm = record.class_time;
+			if (/^\d{2}:\d{2}/.test(record.class_time)) {
+				hhmm = record.class_time.substring(0, 5);
+			}
+			const dateTime = `${mmdd} ${hhmm}`;
+			
+			html += `<tr class="${rowClass}">`;
+			html += `<td class="${statusClass}">${statusText}`;
+			
+			// 黃牌狀態顯示操作按鈕
+			if (record.status_name === 'late_cancel') {
+				html += `<br><div class="action-buttons">
+					<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
+					<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">撤銷(不扣課)</button>
+				</div>`;
+			}
+			
+			html += `</td>`;
+			html += `<td>${dateTime}</td>`;
+			html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
+			html += `<td>${roomName}</td>`;
+			html += "</tr>";
 		});
-
-		function buildTable(records, title) {
-			if (!records.length) {
-				return `<div class=\"booking-list-container\"><p>無預約紀錄</p></div>`;
-			}
-			let html = '<div class="booking-list-container">';
-			html += '<table class="booking-list-table">';
-			html += "<thead><tr>";
-			html += "<th>狀態</th>";
-			html += "<th>日期/時間</th>";
-			html += "<th>課程/教練</th>";
-			html += "<th>教室</th>";
-			html += "</tr></thead>";
-			html += "<tbody>";
-			records.forEach((record) => {
-				const statusClass = `status-${record.status_name}`;
-				const statusText = statusMap[record.status_name] || record.status_name;
-				const roomName = (record.room_name || '').replace(/教室/g, '');
-				const rowClass = record.status_name === 'late_cancel' ? 'late-cancel-row' : '';
-				// 日期/時間格式 MM/DD HH:mm
-				let mmdd = record.class_day;
-				if (/^\d{4}-\d{2}-\d{2}$/.test(record.class_day)) {
-					const parts = record.class_day.split('-');
-					mmdd = parts[1] + '/' + parts[2];
-				}
-				let time = record.class_time;
-				// class_time 可能是 HH:mm:ss 或 HH:mm
-				let hhmm = time;
-				if (/^\d{2}:\d{2}/.test(time)) {
-					hhmm = time.substring(0,5);
-				}
-				const dateTime = `${mmdd} ${hhmm}`;
-				html += `<tr class="${rowClass}">`;
-				html += `<td class="${statusClass}">${statusText}`;
-				if (record.status_name === 'late_cancel') {
-					html += `<br><div class="action-buttons">
-						<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
-						<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">撤銷(不扣課)</button>
-					</div>`;
-				}
-				html += `</td>`;
-				html += `<td>${dateTime}</td>`;
-				html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
-				html += `<td>${roomName}</td>`;
-				html += "</tr>";
-			});
-			html += "</tbody></table>";
-			html += "</div>";
-			return html;
-		}
-
-		return {
-			future: buildTable(futureRecords, '📅 未來上課紀錄'),
-			past: buildTable(pastRecords, '📋 當天及之前上課紀錄'),
-		};
+		
+		html += "</tbody></table>";
+		html += "</div>";
+		
+		return html;
 	}
 
 	/**
@@ -507,33 +484,25 @@
 		// 移除所有舊的 booking-list-container
 		targetContainer.querySelectorAll('.booking-list-container').forEach(e => e.remove());
 
-	// 取得分表 HTML
-	const tables = createBookListTable(data);
-	const totalCount = (data && data.aaData && Array.isArray(data.aaData)) ? data.aaData.length : 0;
+		// 計算總筆數
+		const totalCount = (data && data.aaData && Array.isArray(data.aaData)) ? data.aaData.length : 0;
 
-	// 統一顯示標題
-	const titleDiv = document.createElement("div");
-	titleDiv.className = "booking-list-title";
-	titleDiv.textContent = `上課紀錄 (共 ${totalCount} 筆)`;
-	targetContainer.appendChild(titleDiv);
+		// 顯示標題
+		const titleDiv = document.createElement("div");
+		titleDiv.className = "booking-list-title";
+		titleDiv.textContent = `上課紀錄 (共 ${totalCount} 筆)`;
+		targetContainer.appendChild(titleDiv);
 
-	// 插入未來表格
-	const futureContainer = document.createElement("div");
-	futureContainer.innerHTML = tables.future;
-	targetContainer.appendChild(futureContainer);
+		// 建立並插入表格
+		const tableHTML = createBookListTable(data);
+		const tableContainer = document.createElement("div");
+		tableContainer.innerHTML = tableHTML;
+		targetContainer.appendChild(tableContainer);
 
-	// 插入分隔線
-	const hr = document.createElement("hr");
-	targetContainer.appendChild(hr);
-
-	// 插入過去表格
-	const pastContainer = document.createElement("div");
-	pastContainer.innerHTML = tables.past;
-	targetContainer.appendChild(pastContainer);
-
-	console.log("預約清單分表已插入到頁面");
-	// 綁定動作按鈕事件監聽器
-	bindActionButtonEvents();
+		console.log("預約清單已插入到頁面");
+		
+		// 綁定動作按鈕事件監聽器
+		bindActionButtonEvents();
 	}
 
 	/**
