@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1004.1650
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示預約清單
+// @version      1.25.1004.1700
+// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示預約清單,支援黃牌簽到/取消操作
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -65,6 +65,46 @@
 			font-weight: bold;
 			margin-bottom: 10px;
 			color: #333;
+		}
+		.action-buttons {
+			display: flex;
+			gap: 8px;
+			flex-direction: column;
+		}
+		.action-btn {
+			padding: 6px 12px;
+			border: none;
+			border-radius: 4px;
+			font-size: 13px;
+			cursor: pointer;
+			transition: all 0.2s;
+			font-weight: 500;
+		}
+		.action-btn:hover {
+			opacity: 0.8;
+			transform: translateY(-1px);
+		}
+		.action-btn:active {
+			transform: translateY(0);
+		}
+		.action-btn-checkin {
+			background-color: #4caf50;
+			color: white;
+		}
+		.action-btn-checkin:hover {
+			background-color: #45a049;
+		}
+		.action-btn-cancel {
+			background-color: #ff9800;
+			color: white;
+		}
+		.action-btn-cancel:hover {
+			background-color: #fb8c00;
+		}
+		.action-btn:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+			transform: none;
 		}
 	`);
 
@@ -308,6 +348,46 @@
 	}
 
 	/**
+	 * 執行黃牌動作 - 簽到或取消
+	 * @param {string} bookId 預約編號
+	 * @param {string} actionType 動作類型: "check_in" 或 "punished"
+	 * @returns {Promise<Object>} API 回應資料
+	 */
+	async function setBookAction(bookId, actionType) {
+		return new Promise((resolve, reject) => {
+			const now = Date.now();
+			const url = `https://admin.hypercore.com.tw/?c=sign&m=setBook&random=${now}`;
+			
+			// 建立 FormData
+			const formData = new URLSearchParams();
+			formData.append('book_id', bookId);
+			formData.append('action_type', actionType);
+
+			GM_xmlhttpRequest({
+				method: "POST",
+				url: url,
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded",
+				},
+				data: formData.toString(),
+				onload: function (response) {
+					try {
+						const data = JSON.parse(response.responseText);
+						resolve(data);
+					} catch (err) {
+						console.error("解析 setBook API 回應失敗:", err);
+						reject(err);
+					}
+				},
+				onerror: function (err) {
+					console.error("setBook API 請求失敗:", err);
+					reject(err);
+				},
+			});
+		});
+	}
+
+	/**
 	 * 建立預約清單表格 HTML
 	 * @param {Object} data API 回應資料
 	 * @returns {string} 表格 HTML 字串
@@ -336,6 +416,7 @@
 		html += "<th>日期/時間</th>";
 		html += "<th>課程/教練</th>";
 		html += "<th>教室</th>";
+		html += "<th>動作</th>";
 		html += "</tr></thead>";
 		html += "<tbody>";
 
@@ -350,6 +431,19 @@
 			html += `<td>${record.class_day}<br>${record.class_time}</td>`;
 			html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
 			html += `<td>${roomName}</td>`;
+			
+			// 僅為 late_cancel 狀態顯示動作按鈕
+			if (record.status_name === 'late_cancel') {
+				html += `<td>
+					<div class="action-buttons">
+						<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
+						<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">取消(不扣課)</button>
+					</div>
+				</td>`;
+			} else {
+				html += `<td>-</td>`;
+			}
+			
 			html += "</tr>";
 		});
 
@@ -384,6 +478,70 @@
 
 		targetContainer.appendChild(tableContainer);
 		console.log("預約清單表格已插入到頁面");
+
+		// 綁定動作按鈕事件監聽器
+		bindActionButtonEvents();
+	}
+
+	/**
+	 * 綁定動作按鈕的點擊事件
+	 */
+	function bindActionButtonEvents() {
+		// 使用事件委派方式處理所有動作按鈕
+		document.addEventListener('click', async function(event) {
+			const target = event.target;
+			
+			// 檢查是否點擊了動作按鈕
+			if (target.classList.contains('action-btn')) {
+				const bookId = target.getAttribute('data-book-id');
+				const actionType = target.getAttribute('data-action');
+				
+				if (!bookId || !actionType) {
+					console.error('缺少 book_id 或 action_type');
+					return;
+				}
+
+				// 防止重複點擊
+				if (target.disabled) {
+					return;
+				}
+
+				// 禁用所有同列的按鈕
+				const row = target.closest('tr');
+				const allButtons = row.querySelectorAll('.action-btn');
+				allButtons.forEach(btn => btn.disabled = true);
+
+				try {
+					console.log(`執行動作: bookId=${bookId}, actionType=${actionType}`);
+					
+					// 呼叫 API
+					const response = await setBookAction(bookId, actionType);
+					
+					console.log('API 回應:', response);
+
+					// 根據回應顯示訊息
+					if (response && response.message === 'success') {
+						const actionText = actionType === 'check_in' ? '簽到' : '取消';
+						alert(`${actionText}成功`);
+						
+						// 重新整理頁面
+						window.location.reload();
+					} else {
+						const message = response && response.message ? response.message : '未知錯誤';
+						alert(`操作失敗：${message}`);
+						
+						// 重新啟用按鈕
+						allButtons.forEach(btn => btn.disabled = false);
+					}
+				} catch (err) {
+					console.error('執行動作失敗:', err);
+					alert(`操作失敗：${err.message}`);
+					
+					// 重新啟用按鈕
+					allButtons.forEach(btn => btn.disabled = false);
+				}
+			}
+		});
 	}
 
 	/**
