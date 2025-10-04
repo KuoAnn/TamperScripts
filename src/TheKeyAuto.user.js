@@ -716,6 +716,8 @@
 			.map((record) => {
 				const statusClass = `status-${record.status_name}`;
 				const statusText = statusMap[record.status_name] || record.status_name;
+				// 處理場館名稱，移除 'THE KEY YOGA '
+				const locationName = (record.location_name || "").replace("THE KEY YOGA ", "");
 				const roomName = (record.room_name || "").replace(/教室/g, "");
 
 				const rowClass = record.status_name === "late_cancel" ? "late-cancel-row" : record.status_name === "no_show" ? "no-show-row" : "";
@@ -741,11 +743,14 @@
 				</div>`
 						: "";
 
+				// 教室欄位格式: 場館名稱<br>教室名稱
+				const locationRoom = `${locationName}<br>${roomName}`;
+
 				return `<tr class="${rowClass}">
 				<td class="${statusClass}">${statusText}${actionButtons}</td>
 				<td>${dateTime}</td>
 				<td>${record.class_name}<br>${record.coach_name}</td>
-				<td>${roomName}</td>
+				<td>${locationRoom}</td>
 			</tr>`;
 			})
 			.join("");
