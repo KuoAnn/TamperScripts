@@ -411,13 +411,12 @@
 		let html = '<div class="booking-list-container">';
 		html += `<div class="booking-list-title">📋 上課清單 (最近一個月，共 ${data.aaData.length} 筆)</div>`;
 		html += '<table class="booking-list-table">';
-		html += "<thead><tr>";
-		html += "<th>狀態</th>";
-		html += "<th>日期/時間</th>";
-		html += "<th>課程/教練</th>";
-		html += "<th>教室</th>";
-		html += "<th>動作</th>";
-		html += "</tr></thead>";
+		   html += "<thead><tr>";
+		   html += "<th>狀態</th>";
+		   html += "<th>日期/時間</th>";
+		   html += "<th>課程/教練</th>";
+		   html += "<th>教室</th>";
+		   html += "</tr></thead>";
 		html += "<tbody>";
 
 		data.aaData.forEach((record) => {
@@ -426,25 +425,19 @@
 			const roomName = (record.room_name || '').replace(/教室/g, '');
 			const rowClass = record.status_name === 'late_cancel' ? 'late-cancel-row' : '';
 
-			html += `<tr class="${rowClass}">`;
-			html += `<td class="${statusClass}">${statusText}</td>`;
-			html += `<td>${record.class_day}<br>${record.class_time}</td>`;
-			html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
-			html += `<td>${roomName}</td>`;
-			
-			// 僅為 late_cancel 狀態顯示動作按鈕
-			if (record.status_name === 'late_cancel') {
-				html += `<td>
-					<div class="action-buttons">
-						<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
-						<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">取消(不扣課)</button>
-					</div>
-				</td>`;
-			} else {
-				html += `<td>-</td>`;
-			}
-			
-			html += "</tr>";
+			   html += `<tr class="${rowClass}">`;
+			   html += `<td class="${statusClass}">${statusText}`;
+			   if (record.status_name === 'late_cancel') {
+				   html += `<br><div class="action-buttons">
+					   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button><br>
+					   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">取消(不扣課)</button>
+				   </div>`;
+			   }
+			   html += `</td>`;
+			   html += `<td>${record.class_day}<br>${record.class_time}</td>`;
+			   html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
+			   html += `<td>${roomName}</td>`;
+			   html += "</tr>";
 		});
 
 		html += "</tbody></table>";
