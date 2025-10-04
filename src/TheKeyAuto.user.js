@@ -64,12 +64,13 @@
 			color: #1565c0;
 		}
 		.booking-list-container {
-			margin-top: 20px;
+			margin-top: 12px;
 		}
 		.booking-list-title {
 			font-size: 16px;
 			font-weight: bold;
 			margin-bottom: 10px;
+			margin-top: 6px;
 			color: #333;
 		}
 		.action-buttons {
@@ -281,6 +282,7 @@
 		return new Promise((resolve) => {
 			const now = Date.now();
 			const endDate = new Date();
+			endDate.setDate(endDate.getDate() + 2); // endDate 改為當天+2
 			const startDate = new Date();
 			startDate.setMonth(startDate.getMonth() - 1); // 查詢最近一個月
 
@@ -400,7 +402,10 @@
 	 */
 	function createBookListTable(data) {
 		if (!data || !data.aaData || !Array.isArray(data.aaData) || data.aaData.length === 0) {
-			return '<div class="booking-list-container"><p>無預約紀錄</p></div>';
+			return {
+				future: '<div class="booking-list-container"><p>無預約紀錄</p></div>',
+				past: '<div class="booking-list-container"><p>無預約紀錄</p></div>'
+			};
 		}
 
 		// 狀態名稱對應
@@ -414,42 +419,77 @@
 			absent: "缺席",
 		};
 
-		let html = '<div class="booking-list-container">';
-		html += `<div class="booking-list-title">📋 上課紀錄 (最近一個月，共 ${data.aaData.length} 筆)</div>`;
-		html += '<table class="booking-list-table">';
-		   html += "<thead><tr>";
-		   html += "<th>狀態</th>";
-		   html += "<th>日期/時間</th>";
-		   html += "<th>課程/教練</th>";
-		   html += "<th>教室</th>";
-		   html += "</tr></thead>";
-		html += "<tbody>";
+		// 依日期分組
+		const today = new Date();
+		today.setHours(0,0,0,0);
+		const futureRecords = [];
+		const pastRecords = [];
 
 		data.aaData.forEach((record) => {
-			const statusClass = `status-${record.status_name}`;
-			const statusText = statusMap[record.status_name] || record.status_name;
-			const roomName = (record.room_name || '').replace(/教室/g, '');
-			const rowClass = record.status_name === 'late_cancel' ? 'late-cancel-row' : '';
-
-			   html += `<tr class="${rowClass}">`;
-			   html += `<td class="${statusClass}">${statusText}`;
-			   if (record.status_name === 'late_cancel') {
-				   html += `<br><div class="action-buttons">
-					   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
-					   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">撤銷(不扣課)</button>
-				   </div>`;
-			   }
-			   html += `</td>`;
-			   html += `<td>${record.class_day}<br>${record.class_time}</td>`;
-			   html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
-			   html += `<td>${roomName}</td>`;
-			   html += "</tr>";
+			// class_day 格式 yyyy-mm-dd
+			const recordDate = new Date(record.class_day);
+			recordDate.setHours(0,0,0,0);
+			if (recordDate > today) {
+				futureRecords.push(record);
+			} else {
+				pastRecords.push(record);
+			}
 		});
 
-		html += "</tbody></table>";
-		html += "</div>";
+		function buildTable(records, title) {
+			if (!records.length) {
+				return `<div class=\"booking-list-container\"><p>無預約紀錄</p></div>`;
+			}
+			let html = '<div class="booking-list-container">';
+			html += '<table class="booking-list-table">';
+			html += "<thead><tr>";
+			html += "<th>狀態</th>";
+			html += "<th>日期/時間</th>";
+			html += "<th>課程/教練</th>";
+			html += "<th>教室</th>";
+			html += "</tr></thead>";
+			html += "<tbody>";
+			records.forEach((record) => {
+				const statusClass = `status-${record.status_name}`;
+				const statusText = statusMap[record.status_name] || record.status_name;
+				const roomName = (record.room_name || '').replace(/教室/g, '');
+				const rowClass = record.status_name === 'late_cancel' ? 'late-cancel-row' : '';
+				// 日期/時間格式 MM/DD HH:mm
+				let mmdd = record.class_day;
+				if (/^\d{4}-\d{2}-\d{2}$/.test(record.class_day)) {
+					const parts = record.class_day.split('-');
+					mmdd = parts[1] + '/' + parts[2];
+				}
+				let time = record.class_time;
+				// class_time 可能是 HH:mm:ss 或 HH:mm
+				let hhmm = time;
+				if (/^\d{2}:\d{2}/.test(time)) {
+					hhmm = time.substring(0,5);
+				}
+				const dateTime = `${mmdd} ${hhmm}`;
+				html += `<tr class="${rowClass}">`;
+				html += `<td class="${statusClass}">${statusText}`;
+				if (record.status_name === 'late_cancel') {
+					html += `<br><div class="action-buttons">
+						<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
+						<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">撤銷(不扣課)</button>
+					</div>`;
+				}
+				html += `</td>`;
+				html += `<td>${dateTime}</td>`;
+				html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
+				html += `<td>${roomName}</td>`;
+				html += "</tr>";
+			});
+			html += "</tbody></table>";
+			html += "</div>";
+			return html;
+		}
 
-		return html;
+		return {
+			future: buildTable(futureRecords, '📅 未來上課紀錄'),
+			past: buildTable(pastRecords, '📋 當天及之前上課紀錄'),
+		};
 	}
 
 	/**
@@ -464,22 +504,36 @@
 			return;
 		}
 
-		// 檢查是否已經插入過表格，避免重複插入
-		const existingTable = targetContainer.querySelector(".booking-list-container");
-		if (existingTable) {
-			existingTable.remove();
-		}
+		// 移除所有舊的 booking-list-container
+		targetContainer.querySelectorAll('.booking-list-container').forEach(e => e.remove());
 
-		// 建立表格並插入
-		const tableHTML = createBookListTable(data);
-		const tableContainer = document.createElement("div");
-		tableContainer.innerHTML = tableHTML;
+	// 取得分表 HTML
+	const tables = createBookListTable(data);
+	const totalCount = (data && data.aaData && Array.isArray(data.aaData)) ? data.aaData.length : 0;
 
-		targetContainer.appendChild(tableContainer);
-		console.log("預約清單表格已插入到頁面");
+	// 統一顯示標題
+	const titleDiv = document.createElement("div");
+	titleDiv.className = "booking-list-title";
+	titleDiv.textContent = `上課紀錄 (共 ${totalCount} 筆)`;
+	targetContainer.appendChild(titleDiv);
 
-		// 綁定動作按鈕事件監聽器
-		bindActionButtonEvents();
+	// 插入未來表格
+	const futureContainer = document.createElement("div");
+	futureContainer.innerHTML = tables.future;
+	targetContainer.appendChild(futureContainer);
+
+	// 插入分隔線
+	const hr = document.createElement("hr");
+	targetContainer.appendChild(hr);
+
+	// 插入過去表格
+	const pastContainer = document.createElement("div");
+	pastContainer.innerHTML = tables.past;
+	targetContainer.appendChild(pastContainer);
+
+	console.log("預約清單分表已插入到頁面");
+	// 綁定動作按鈕事件監聽器
+	bindActionButtonEvents();
 	}
 
 	/**
@@ -489,54 +543,52 @@
 		// 使用事件委派方式處理所有動作按鈕
 		document.addEventListener('click', async function(event) {
 			const target = event.target;
-			
 			// 檢查是否點擊了動作按鈕
 			if (target.classList.contains('action-btn')) {
 				const bookId = target.getAttribute('data-book-id');
 				const actionType = target.getAttribute('data-action');
-				
 				if (!bookId || !actionType) {
 					console.error('缺少 book_id 或 action_type');
 					return;
 				}
-
 				// 防止重複點擊
 				if (target.disabled) {
 					return;
 				}
-
+				// 確認視窗
+				let confirmMsg = '';
+				if (actionType === 'check_in') {
+					confirmMsg = '請確認是否簽到 (扣課)？';
+				} else if (actionType === 'punished') {
+					confirmMsg = '請確認是否撤銷 (不扣課)？';
+				} else {
+					confirmMsg = '請確認是否執行此操作？';
+				}
+				if (!window.confirm(confirmMsg)) {
+					return;
+				}
 				// 禁用所有同列的按鈕
 				const row = target.closest('tr');
 				const allButtons = row.querySelectorAll('.action-btn');
 				allButtons.forEach(btn => btn.disabled = true);
-
 				try {
 					console.log(`執行動作: bookId=${bookId}, actionType=${actionType}`);
-					
 					// 呼叫 API
 					const response = await setBookAction(bookId, actionType);
-					
 					console.log('API 回應:', response);
-
 					// 根據回應顯示訊息
 					if (response && response.message === 'success') {
 						const actionText = actionType === 'check_in' ? '簽到' : '取消';
 						alert(`${actionText}成功`);
-						
-						// 重新整理頁面
 						window.location.reload();
 					} else {
 						const message = response && response.message ? response.message : '未知錯誤';
 						alert(`操作失敗：${message}`);
-						
-						// 重新啟用按鈕
 						allButtons.forEach(btn => btn.disabled = false);
 					}
 				} catch (err) {
 					console.error('執行動作失敗:', err);
 					alert(`操作失敗：${err.message}`);
-					
-					// 重新啟用按鈕
 					allButtons.forEach(btn => btn.disabled = false);
 				}
 			}
