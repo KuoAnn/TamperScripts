@@ -300,7 +300,7 @@
 	 */
 	function waitForElementWithValue(selector, callback, retry = 0) {
 		const el = document.querySelector(selector);
-		if (el && el.value && el.value.trim() !== '') {
+		if (el && el.value && el.value.trim() !== "") {
 			callback();
 		} else if (retry < 50) {
 			setTimeout(() => waitForElementWithValue(selector, callback, retry + 1), 100);
@@ -408,18 +408,18 @@
 				const statusCell = document.querySelector("#member_package .package_list table tbody tr td:nth-child(3)");
 				if (statusCell) {
 					const statusText = statusCell.textContent.trim();
-					let badgeClass = 'status-default';
-					
+					let badgeClass = "status-default";
+
 					// 根據狀態文字決定 badge 樣式
-					if (statusText === '使用中') {
-						badgeClass = 'status-active';
-					} else if (statusText.includes('No show 停權中') || statusText.includes('停權中')) {
-						badgeClass = 'status-suspended';
+					if (statusText === "使用中") {
+						badgeClass = "status-active";
+					} else if (statusText.includes("No show 停權中") || statusText.includes("停權中")) {
+						badgeClass = "status-suspended";
 					}
-					
+
 					let displayText = statusText;
-					if (statusText.includes('No show 停權中')) {
-						displayText = '停權中';
+					if (statusText.includes("No show 停權中")) {
+						displayText = "停權中";
 					}
 					resolve({ text: displayText, badgeClass: badgeClass });
 				} else {
@@ -437,37 +437,37 @@
 	async function getMergeIdFromNoShowRow() {
 		return new Promise((resolve) => {
 			// 尋找會籍狀態為 "No show 停權中" 的那一列
-			const rows = document.querySelectorAll('#member_package .package_list table tbody tr');
+			const rows = document.querySelectorAll("#member_package .package_list table tbody tr");
 			let tradeButton = null;
-			
+
 			for (const row of rows) {
-				const statusCell = row.querySelector('td:nth-child(3)');
-				if (statusCell && statusCell.textContent.trim().includes('No show 停權中')) {
+				const statusCell = row.querySelector("td:nth-child(3)");
+				if (statusCell && statusCell.textContent.trim().includes("No show 停權中")) {
 					// 找到對應的管理按鈕
-					tradeButton = row.querySelector('button.trade_bar');
+					tradeButton = row.querySelector("button.trade_bar");
 					break;
 				}
 			}
-			
+
 			if (!tradeButton) {
-				console.error('找不到 No show 停權中的管理按鈕');
+				console.error("找不到 No show 停權中的管理按鈕");
 				resolve(null);
 				return;
 			}
-			
-			console.log('找到管理按鈕,準備點擊');
+
+			console.log("找到管理按鈕,準備點擊");
 			// 點擊管理按鈕
 			tradeButton.click();
-			
+
 			// 等待表單載入並取得 merge_id (使用 waitForElementWithValue 等待欄位有值)
 			waitForElementWithValue('#member_package .search_form [name="merge_id"]', () => {
 				const mergeIdInput = document.querySelector('#member_package .search_form [name="merge_id"]');
 				if (mergeIdInput && mergeIdInput.value) {
 					const mergeId = mergeIdInput.value;
-					console.log('成功取得 merge_id:', mergeId);
+					console.log("成功取得 merge_id:", mergeId);
 					resolve(mergeId);
 				} else {
-					console.error('找不到 merge_id 或值為空');
+					console.error("找不到 merge_id 或值為空");
 					resolve(null);
 				}
 			});
@@ -479,57 +479,57 @@
 	 * @returns {HTMLElement|null} 按鈕元素或 null
 	 */
 	function createCancelNoShowButton() {
-		const button = document.createElement('button');
-		button.type = 'button';
-		button.className = 'btn btn-danger btn-xs cancel_no_show';
-		button.textContent = '解除';
-		button.style.marginLeft = '8px';
-		
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "btn btn-danger btn-xs cancel_no_show";
+		button.textContent = "解除";
+		button.style.marginLeft = "8px";
+
 		// 綁定點擊事件
-		button.addEventListener('click', async function() {
+		button.addEventListener("click", async function () {
 			// 確認視窗
-			if (!window.confirm('確定要解除 No show 停權嗎?')) {
+			if (!window.confirm("確定要解除 No show 停權嗎?")) {
 				return;
 			}
-			
+
 			// 禁用按鈕防止重複點擊
 			button.disabled = true;
-			button.textContent = '處理中...';
-			
+			button.textContent = "處理中...";
+
 			try {
 				// 點擊管理按鈕並等待表單載入,取得 merge_id
-				console.log('開始取得 merge_id...');
+				console.log("開始取得 merge_id...");
 				const mergeId = await getMergeIdFromNoShowRow();
-				
+
 				if (!mergeId) {
-					alert('無法取得會籍 ID,請重新整理頁面後再試');
+					alert("無法取得會籍 ID,請重新整理頁面後再試");
 					button.disabled = false;
-					button.textContent = '解除';
+					button.textContent = "解除";
 					return;
 				}
-				
+
 				console.log(`執行解除 No show 停權: merge_id=${mergeId}`);
 				const response = await cancelNoShow(mergeId);
-				console.log('API 回應:', response);
-				
+				console.log("API 回應:", response);
+
 				// 根據回應顯示訊息
-				if (response && response.message === 'success') {
-					alert('解除停權成功');
+				if (response && response.message === "success") {
+					alert("解除停權成功");
 					window.location.reload();
 				} else {
-					const message = response && response.message ? response.message : '未知錯誤';
+					const message = response && response.message ? response.message : "未知錯誤";
 					alert(`解除停權失敗：${message}`);
 					button.disabled = false;
-					button.textContent = '解除';
+					button.textContent = "解除";
 				}
 			} catch (err) {
-				console.error('解除停權失敗:', err);
+				console.error("解除停權失敗:", err);
 				alert(`解除停權失敗：${err.message}`);
 				button.disabled = false;
-				button.textContent = '解除';
+				button.textContent = "解除";
 			}
 		});
-		
+
 		return button;
 	}
 
@@ -625,11 +625,11 @@
 		return new Promise((resolve, reject) => {
 			const now = Date.now();
 			const url = `https://admin.hypercore.com.tw/?c=sign&m=setBook&random=${now}`;
-			
+
 			// 建立 FormData
 			const formData = new URLSearchParams();
-			formData.append('book_id', bookId);
-			formData.append('action_type', actionType);
+			formData.append("book_id", bookId);
+			formData.append("action_type", actionType);
 
 			GM_xmlhttpRequest({
 				method: "POST",
@@ -664,10 +664,10 @@
 		return new Promise((resolve, reject) => {
 			const now = Date.now();
 			const url = `https://admin.hypercore.com.tw/?c=member&m=cancelNoShow&random=${now}`;
-			
+
 			// 建立 FormData
 			const formData = new URLSearchParams();
-			formData.append('merge_id', mergeId);
+			formData.append("merge_id", mergeId);
 
 			GM_xmlhttpRequest({
 				method: "POST",
@@ -699,7 +699,7 @@
 	 * @returns {string} 星期幾的中文 (一~日)
 	 */
 	function getWeekdayInChinese(dateStr) {
-		const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+		const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
 		const date = new Date(dateStr);
 		return weekdays[date.getDay()];
 	}
@@ -722,7 +722,7 @@
 			punished: "🟨黃牌不罰",
 			cancel: "❌取消",
 			waiting: "😢候補",
-			no_show: "😞缺席"
+			no_show: "😞缺席",
 		};
 
 		let html = '<div class="booking-list-container">';
@@ -734,55 +734,55 @@
 		html += "<th>教室</th>";
 		html += "</tr></thead>";
 		html += "<tbody>";
-		
+
 		data.aaData.forEach((record) => {
 			const statusClass = `status-${record.status_name}`;
 			const statusText = statusMap[record.status_name] || record.status_name;
-			const roomName = (record.room_name || '').replace(/教室/g, '');
-			let rowClass = '';
-			if (record.status_name === 'late_cancel') {
-				rowClass = 'late-cancel-row';
-			} else if (record.status_name === 'no_show') {
-				rowClass = 'no-show-row';
+			const roomName = (record.room_name || "").replace(/教室/g, "");
+			let rowClass = "";
+			if (record.status_name === "late_cancel") {
+				rowClass = "late-cancel-row";
+			} else if (record.status_name === "no_show") {
+				rowClass = "no-show-row";
 			}
-			
+
 			// 日期/時間格式 MM/dd (一)<br>HH:mm
 			let mmdd = record.class_day;
-			let weekday = '';
+			let weekday = "";
 			if (/^\d{4}-\d{2}-\d{2}$/.test(record.class_day)) {
-				const parts = record.class_day.split('-');
-				mmdd = parts[1] + '/' + parts[2];
+				const parts = record.class_day.split("-");
+				mmdd = parts[1] + "/" + parts[2];
 				weekday = getWeekdayInChinese(record.class_day);
 			}
-			
+
 			// class_time 可能是 HH:mm:ss 或 HH:mm
 			let hhmm = record.class_time;
 			if (/^\d{2}:\d{2}/.test(record.class_time)) {
 				hhmm = record.class_time.substring(0, 5);
 			}
 			const dateTime = `${mmdd} (${weekday})<br>${hhmm}`;
-			
+
 			html += `<tr class="${rowClass}">`;
 			html += `<td class="${statusClass}">${statusText}`;
-			
+
 			// 黃牌狀態顯示操作按鈕
-			if (record.status_name === 'late_cancel') {
+			if (record.status_name === "late_cancel") {
 				html += `<br><div class="action-buttons">
 					<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">補簽</button>
 					<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不罰</button>
 				</div>`;
 			}
-			
+
 			html += `</td>`;
 			html += `<td>${dateTime}</td>`;
 			html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
 			html += `<td>${roomName}</td>`;
 			html += "</tr>";
 		});
-		
+
 		html += "</tbody></table>";
 		html += "</div>";
-		
+
 		return html;
 	}
 
@@ -793,30 +793,30 @@
 	 */
 	function insertBookListTable(data, membershipStatus) {
 		// 尋找會員資訊區塊
-		const memberProfileSection = document.getElementById('member_profile_info');
+		const memberProfileSection = document.getElementById("member_profile_info");
 		if (!memberProfileSection) {
-			console.error('找不到 #member_profile_info');
+			console.error("找不到 #member_profile_info");
 			return;
 		}
 		// 找到第二個 col-md-6
-		const colMd6List = memberProfileSection.querySelectorAll('.col-md-6');
+		const colMd6List = memberProfileSection.querySelectorAll(".col-md-6");
 		if (colMd6List.length < 2) {
-			console.error('找不到第二個 .col-md-6');
+			console.error("找不到第二個 .col-md-6");
 			return;
 		}
 		const targetCol = colMd6List[1];
 		// 移除舊的 booking-list-title
-		targetCol.querySelectorAll('.booking-list-title').forEach(e => e.remove());
+		targetCol.querySelectorAll(".booking-list-title").forEach((e) => e.remove());
 		// 計算總筆數
-		const totalCount = (data && data.aaData && Array.isArray(data.aaData)) ? data.aaData.length : 0;
+		const totalCount = data && data.aaData && Array.isArray(data.aaData) ? data.aaData.length : 0;
 		// 建立只顯示 badge 的容器
-		const titleDiv = document.createElement('div');
-		titleDiv.className = 'booking-list-title';
+		const titleDiv = document.createElement("div");
+		titleDiv.className = "booking-list-title";
 		if (membershipStatus && membershipStatus.text) {
-			const badge = document.createElement('span');
+			const badge = document.createElement("span");
 			badge.className = `membership-status-badge ${membershipStatus.badgeClass}`;
 			badge.textContent = membershipStatus.text;
-			if (membershipStatus.text === '停權中') {
+			if (membershipStatus.text === "停權中") {
 				const cancelButton = createCancelNoShowButton();
 				if (cancelButton) {
 					badge.appendChild(cancelButton);
@@ -824,36 +824,53 @@
 			}
 			titleDiv.appendChild(badge);
 		}
+		// 取得查詢日期區間
+		let dateRangeText = "";
+		// 若無,則用 getBookList 內的預設查詢區間
+		try {
+			const now = Date.now();
+			const endDate = new Date();
+			endDate.setDate(endDate.getDate() + 2);
+			const startDate = new Date();
+			startDate.setDate(startDate.getDate() - 45);
+			const pad = (n) => n.toString().padStart(2, "0");
+			dateRangeText = `${pad(startDate.getMonth() + 1)}/${pad(startDate.getDate())}~${pad(endDate.getMonth() + 1)}/${pad(endDate.getDate())}`;
+		} catch {}
 		// 建立彈窗
-		const modal = document.createElement('div');
-		modal.className = 'booking-modal';
+		const modal = document.createElement("div");
+		modal.className = "booking-modal";
 		modal.innerHTML = `
 			<div class="booking-modal-content">
 				<div class="booking-modal-header">
-					<h2>上課紀錄 (共 ${totalCount} 筆)</h2>
+					<h2>上課紀錄 (${dateRangeText})...共 ${totalCount} 筆</h2>
 					<span class="booking-modal-close">&times;</span>
 				</div>
 				${createBookListTable(data)}
 			</div>
 		`;
-		// 點擊 badge 時顯示彈窗
-		titleDiv.addEventListener('click', () => {
-			modal.style.display = 'block';
+		// 只在 badge 本身被點擊時顯示彈窗，排除解除按鈕
+		titleDiv.addEventListener("click", (e) => {
+			// 如果點擊的是解除 No show 停權按鈕或其子元素則不顯示彈窗
+			const cancelBtn = titleDiv.querySelector(".cancel_no_show");
+			if (cancelBtn && (e.target === cancelBtn || cancelBtn.contains(e.target))) {
+				return;
+			}
+			modal.style.display = "block";
 		});
 		// 點擊關閉按鈕或背景時關閉彈窗
-		const closeBtn = modal.querySelector('.booking-modal-close');
-		closeBtn.addEventListener('click', () => {
-			modal.style.display = 'none';
+		const closeBtn = modal.querySelector(".booking-modal-close");
+		closeBtn.addEventListener("click", () => {
+			modal.style.display = "none";
 		});
-		modal.addEventListener('click', (event) => {
+		modal.addEventListener("click", (event) => {
 			if (event.target === modal) {
-				modal.style.display = 'none';
+				modal.style.display = "none";
 			}
 		});
 		// 插入到第二個 col-md-6 的最下方
 		targetCol.appendChild(titleDiv);
 		document.body.appendChild(modal);
-		console.log('預約清單已插入到會員資訊區塊 (彈窗模式)');
+		console.log("預約清單已插入到會員資訊區塊 (彈窗模式)");
 		bindActionButtonEvents();
 	}
 
@@ -862,14 +879,14 @@
 	 */
 	function bindActionButtonEvents() {
 		// 使用事件委派方式處理所有動作按鈕
-		document.addEventListener('click', async function(event) {
+		document.addEventListener("click", async function (event) {
 			const target = event.target;
 			// 檢查是否點擊了動作按鈕
-			if (target.classList.contains('action-btn')) {
-				const bookId = target.getAttribute('data-book-id');
-				const actionType = target.getAttribute('data-action');
+			if (target.classList.contains("action-btn")) {
+				const bookId = target.getAttribute("data-book-id");
+				const actionType = target.getAttribute("data-action");
 				if (!bookId || !actionType) {
-					console.error('缺少 book_id 或 action_type');
+					console.error("缺少 book_id 或 action_type");
 					return;
 				}
 				// 防止重複點擊
@@ -877,40 +894,40 @@
 					return;
 				}
 				// 確認視窗
-				let confirmMsg = '';
-				if (actionType === 'check_in') {
-					confirmMsg = '請確認是否進行補簽 (扣課)？';
-				} else if (actionType === 'punished') {
+				let confirmMsg = "";
+				if (actionType === "check_in") {
+					confirmMsg = "請確認是否進行補簽 (扣課)？";
+				} else if (actionType === "punished") {
 					confirmMsg = "請確認是否進行黃牌不懲罰 (不扣課)？";
 				} else {
-					confirmMsg = '請確認是否執行此操作？';
+					confirmMsg = "請確認是否執行此操作？";
 				}
 				if (!window.confirm(confirmMsg)) {
 					return;
 				}
 				// 禁用所有同列的按鈕
-				const row = target.closest('tr');
-				const allButtons = row.querySelectorAll('.action-btn');
-				allButtons.forEach(btn => btn.disabled = true);
+				const row = target.closest("tr");
+				const allButtons = row.querySelectorAll(".action-btn");
+				allButtons.forEach((btn) => (btn.disabled = true));
 				try {
 					console.log(`執行動作: bookId=${bookId}, actionType=${actionType}`);
 					// 呼叫 API
 					const response = await setBookAction(bookId, actionType);
-					console.log('API 回應:', response);
+					console.log("API 回應:", response);
 					// 根據回應顯示訊息
-					if (response && response.message === 'success') {
-						const actionText = actionType === 'check_in' ? '簽到' : '取消';
+					if (response && response.message === "success") {
+						const actionText = actionType === "check_in" ? "簽到" : "取消";
 						alert(`${actionText}成功`);
 						window.location.reload();
 					} else {
-						const message = response && response.message ? response.message : '未知錯誤';
+						const message = response && response.message ? response.message : "未知錯誤";
 						alert(`操作失敗：${message}`);
-						allButtons.forEach(btn => btn.disabled = false);
+						allButtons.forEach((btn) => (btn.disabled = false));
 					}
 				} catch (err) {
-					console.error('執行動作失敗:', err);
+					console.error("執行動作失敗:", err);
 					alert(`操作失敗：${err.message}`);
-					allButtons.forEach(btn => btn.disabled = false);
+					allButtons.forEach((btn) => (btn.disabled = false));
 				}
 			}
 		});
@@ -938,13 +955,13 @@
 			}
 
 			console.log("成功取得會員預約清單", data);
-			
+
 			// 取得會籍狀態
 			const membershipStatus = await getMembershipStatus();
 			if (membershipStatus) {
 				console.log("會籍狀態:", membershipStatus);
 			}
-			
+
 			// 插入預約清單表格到頁面,並傳入會籍狀態
 			insertBookListTable(data, membershipStatus);
 		} catch (err) {
@@ -957,42 +974,42 @@
 	 */
 	function addQuickLocationButtons() {
 		function tryInsertButtons(retry = 0) {
-			const form = document.querySelector('#editor-location');
+			const form = document.querySelector("#editor-location");
 			if (!form) return;
-			const locationSelect = form.querySelector('select#location_id');
+			const locationSelect = form.querySelector("select#location_id");
 			if (!locationSelect) {
 				if (retry < 50) setTimeout(() => tryInsertButtons(retry + 1), 100);
 				return;
 			}
-			if (form.querySelector('.quick-location-buttons')) return;
+			if (form.querySelector(".quick-location-buttons")) return;
 			if (locationSelect.options.length === 0) {
 				if (retry < 50) setTimeout(() => tryInsertButtons(retry + 1), 100);
 				return;
 			}
-			const yogaOptions = Array.from(locationSelect.options).filter(option => option.text.includes('THE KEY YOGA'));
+			const yogaOptions = Array.from(locationSelect.options).filter((option) => option.text.includes("THE KEY YOGA"));
 			if (yogaOptions.length === 0) return;
-			const buttonContainer = document.createElement('div');
-			buttonContainer.className = 'quick-location-buttons';
-			yogaOptions.forEach(option => {
-				const btn = document.createElement('button');
-				btn.type = 'button';
-				btn.className = 'quick-location-btn';
-				btn.textContent = option.text.replace('THE KEY YOGA ', '');
-				btn.setAttribute('data-location-id', option.value);
-				btn.addEventListener('click', () => {
+			const buttonContainer = document.createElement("div");
+			buttonContainer.className = "quick-location-buttons";
+			yogaOptions.forEach((option) => {
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = "quick-location-btn";
+				btn.textContent = option.text.replace("THE KEY YOGA ", "");
+				btn.setAttribute("data-location-id", option.value);
+				btn.addEventListener("click", () => {
 					locationSelect.value = option.value;
-					locationSelect.dispatchEvent(new Event('change'));
+					locationSelect.dispatchEvent(new Event("change"));
 					setTimeout(() => {
-						const confirmBtn = form.querySelector('button#change_store');
+						const confirmBtn = form.querySelector("button#change_store");
 						if (confirmBtn) confirmBtn.click();
 					}, 100);
 				});
 				buttonContainer.appendChild(btn);
 			});
 			locationSelect.parentNode.appendChild(buttonContainer);
-			console.log('已添加快速切換場館按鈕');
+			console.log("已添加快速切換場館按鈕");
 		}
-		waitForElement('#editor-location', () => tryInsertButtons());
+		waitForElement("#editor-location", () => tryInsertButtons());
 	}
 
 	// 主流程
