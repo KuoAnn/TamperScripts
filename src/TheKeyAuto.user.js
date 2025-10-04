@@ -1,20 +1,72 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1004.1149
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館
+// @version      1.25.1004.1650
+// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示預約清單
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
+// @grant        GM_addStyle
+// @connect      admin.hypercore.com.tw
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/TheKeyAuto.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/TheKeyAuto.user.js
 // ==/UserScript==
 
 (function () {
 	"use strict";
+
+	// 加入表格樣式
+	GM_addStyle(`
+		.booking-list-table {
+			width: 100%;
+			margin-top: 20px;
+			border-collapse: collapse;
+			background: white;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+		}
+		.booking-list-table th,
+		.booking-list-table td {
+			padding: 10px;
+			text-align: left;
+			border: 1px solid #ddd;
+			font-size: 14px;
+		}
+		.booking-list-table th {
+			background-color: #f5f5f5;
+			font-weight: bold;
+			color: #333;
+		}
+		.booking-list-table tr:hover {
+			background-color: #f9f9f9;
+		}
+		.booking-list-table .status-late_cancel {
+			background-color: #fff9c4 !important;
+			color: #c62828;
+			font-weight: bold;
+		}
+		.booking-list-table tr.late-cancel-row {
+			background-color: #fff9c4 !important;
+		}
+		.booking-list-table .status-check_in {
+			color: #2e7d32;
+		}
+		.booking-list-table .status-reserved {
+			color: #1565c0;
+		}
+		.booking-list-container {
+			margin-top: 20px;
+		}
+		.booking-list-title {
+			font-size: 16px;
+			font-weight: bold;
+			margin-bottom: 10px;
+			color: #333;
+		}
+	`);
 
 	/**
 	 * 顯示提示訊息
@@ -119,7 +171,7 @@
 			// 點擊登入按鈕
 			setTimeout(() => {
 				try {
-					const loginButton = document.querySelector('button.sign_in');
+					const loginButton = document.querySelector("button.sign_in");
 					if (!loginButton) throw new Error("找不到登入按鈕");
 					loginButton.click();
 					console.log("已自動點擊登入按鈕");
@@ -144,12 +196,235 @@
 		return m === "login" || m === "logout";
 	}
 
+	/**
+	 * 檢查當前頁面是否為會員詳細頁面 (c=member&m=detail&account=...)
+	 * @returns {boolean} 是否為會員詳細頁面且有 account 參數
+	 */
+	function isMemberDetailPage() {
+		const urlParams = new URLSearchParams(window.location.search);
+		const c = urlParams.get("c");
+		const m = urlParams.get("m");
+		const account = urlParams.get("account");
+		return c === "member" && m === "detail" && !!account;
+	}
+
+	/**
+	 * 從頁面取得會員電話號碼
+	 * @returns {Promise<string|null>} 會員電話號碼或 null
+	 */
+	async function getMemberPhone() {
+		return new Promise((resolve) => {
+			waitForElement("a#phone.phone", () => {
+				const phoneElement = document.querySelector("a#phone.phone");
+				if (phoneElement && phoneElement.textContent.trim()) {
+					resolve(phoneElement.textContent.trim());
+				} else {
+					console.error("找不到會員電話號碼");
+					resolve(null);
+				}
+			});
+		});
+	}
+
+	/**
+	 * 呼叫 API 取得會員預約課程清單
+	 * @param {string} account 會員帳號(電話號碼)
+	 * @returns {Promise<Object|null>} API 回應資料或 null
+	 */
+	async function getBookList(account) {
+		return new Promise((resolve) => {
+			const now = Date.now();
+			const endDate = new Date();
+			const startDate = new Date();
+			startDate.setMonth(startDate.getMonth() - 1); // 查詢最近一個月
+
+			const startDay = startDate.toISOString().split("T")[0];
+			const endDay = endDate.toISOString().split("T")[0];
+
+			const params = new URLSearchParams({
+				c: "memberStatistics",
+				m: "getBookList",
+				random: now.toString(),
+				sEcho: "1",
+				iColumns: "13",
+				sColumns: ",,,,,,,,,,,,",
+				iDisplayStart: "0",
+				iDisplayLength: "25",
+				mDataProp_0: "status_name",
+				bSortable_0: "false",
+				mDataProp_1: "class_day",
+				bSortable_1: "false",
+				mDataProp_2: "class_time",
+				bSortable_2: "false",
+				mDataProp_3: "location_name",
+				bSortable_3: "false",
+				mDataProp_4: "class_name",
+				bSortable_4: "false",
+				mDataProp_5: "coach_name",
+				bSortable_5: "false",
+				mDataProp_6: "room_name",
+				bSortable_6: "false",
+				mDataProp_7: "position",
+				bSortable_7: "false",
+				mDataProp_8: "trade_no",
+				bSortable_8: "false",
+				mDataProp_9: "membership_name",
+				bSortable_9: "false",
+				mDataProp_10: "period",
+				bSortable_10: "false",
+				mDataProp_11: "executor",
+				bSortable_11: "false",
+				mDataProp_12: "12",
+				bSortable_12: "false",
+				iSortCol_0: "0",
+				sSortDir_0: "asc",
+				iSortingCols: "1",
+				account: account,
+				start_day: startDay,
+				end_day: endDay,
+				_: now.toString(),
+			});
+
+			const url = `https://admin.hypercore.com.tw/?${params.toString()}`;
+
+			GM_xmlhttpRequest({
+				method: "GET",
+				url: url,
+				onload: function (response) {
+					try {
+						const data = JSON.parse(response.responseText);
+						resolve(data);
+					} catch (err) {
+						console.error("解析 API 回應失敗:", err);
+						resolve(null);
+					}
+				},
+				onerror: function (err) {
+					console.error("API 請求失敗:", err);
+					resolve(null);
+				},
+			});
+		});
+	}
+
+	/**
+	 * 建立預約清單表格 HTML
+	 * @param {Object} data API 回應資料
+	 * @returns {string} 表格 HTML 字串
+	 */
+	function createBookListTable(data) {
+		if (!data || !data.aaData || !Array.isArray(data.aaData) || data.aaData.length === 0) {
+			return '<div class="booking-list-container"><p>無預約紀錄</p></div>';
+		}
+
+		// 狀態名稱對應
+		const statusMap = {
+			reserved: "已預約",
+			check_in: "✅簽到",
+			late_cancel: "⚠️黃牌",
+			punished: "黃牌不罰",
+			cancel: "❌取消",
+			waiting: "候補中",
+			absent: "缺席",
+		};
+
+		let html = '<div class="booking-list-container">';
+		html += `<div class="booking-list-title">📋 上課清單 (最近一個月，共 ${data.aaData.length} 筆)</div>`;
+		html += '<table class="booking-list-table">';
+		html += "<thead><tr>";
+		html += "<th>狀態</th>";
+		html += "<th>日期/時間</th>";
+		html += "<th>課程/教練</th>";
+		html += "<th>教室</th>";
+		html += "</tr></thead>";
+		html += "<tbody>";
+
+		data.aaData.forEach((record) => {
+			const statusClass = `status-${record.status_name}`;
+			const statusText = statusMap[record.status_name] || record.status_name;
+			const roomName = (record.room_name || '').replace(/教室/g, '');
+			const rowClass = record.status_name === 'late_cancel' ? 'late-cancel-row' : '';
+
+			html += `<tr class="${rowClass}">`;
+			html += `<td class="${statusClass}">${statusText}</td>`;
+			html += `<td>${record.class_day}<br>${record.class_time}</td>`;
+			html += `<td>${record.class_name}<br>${record.coach_name}</td>`;
+			html += `<td>${roomName}</td>`;
+			html += "</tr>";
+		});
+
+		html += "</tbody></table>";
+		html += "</div>";
+
+		return html;
+	}
+
+	/**
+	 * 將預約清單表格插入到頁面
+	 * @param {Object} data API 回應資料
+	 */
+	function insertBookListTable(data) {
+		// 尋找目標容器
+		const targetContainer = document.querySelector(".content-wrap .content .row .col-md-5");
+		if (!targetContainer) {
+			console.error("找不到目標容器 .content-wrap .content .row .col-md-5");
+			return;
+		}
+
+		// 檢查是否已經插入過表格，避免重複插入
+		const existingTable = targetContainer.querySelector(".booking-list-container");
+		if (existingTable) {
+			existingTable.remove();
+		}
+
+		// 建立表格並插入
+		const tableHTML = createBookListTable(data);
+		const tableContainer = document.createElement("div");
+		tableContainer.innerHTML = tableHTML;
+
+		targetContainer.appendChild(tableContainer);
+		console.log("預約清單表格已插入到頁面");
+	}
+
+	/**
+	 * 處理會員詳細頁面 - 檢查遲到取消紀錄並顯示預約清單
+	 */
+	async function handleMemberDetailPage() {
+		try {
+			console.log("偵測到會員詳細頁面,開始檢查遲到取消紀錄");
+
+			const phone = await getMemberPhone();
+			if (!phone) {
+				console.error("無法取得會員電話號碼");
+				return;
+			}
+
+			console.log("會員電話:", phone);
+
+			const data = await getBookList(phone);
+			if (!data) {
+				console.error("無法取得會員預約清單");
+				return;
+			}
+
+			console.log("成功取得會員預約清單", data);
+			
+			// 插入預約清單表格到頁面
+			insertBookListTable(data);
+		} catch (err) {
+			console.error("處理會員詳細頁面失敗:", err);
+		}
+	}
+
 	// 主流程
 	registerMenuCommands();
 	(async function main() {
 		if (isLoginPage()) {
 			console.log("偵測到登入/登出頁面,啟動自動登入");
-			waitForElement('form#login_form', fillLoginForm);
+			waitForElement("form#login_form", fillLoginForm);
+		} else if (isMemberDetailPage()) {
+			console.log("偵測到會員詳細頁面,啟動遲到取消紀錄檢查");
+			handleMemberDetailPage();
 		}
 	})();
 })();
