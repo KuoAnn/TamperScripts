@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1004.1731
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單,支援黃牌簽到/取消操作
+// @version      1.25.1004.1830
+// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單,支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -115,6 +115,30 @@
 			opacity: 0.5;
 			cursor: not-allowed;
 			transform: none;
+		}
+		.quick-location-buttons {
+			margin-top: 10px;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+		}
+		.quick-location-btn {
+			padding: 8px 16px;
+			background-color: #007bff;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			font-size: 13px;
+			cursor: pointer;
+			transition: all 0.2s;
+			font-weight: 500;
+		}
+		.quick-location-btn:hover {
+			background-color: #0056b3;
+			transform: translateY(-1px);
+		}
+		.quick-location-btn:active {
+			transform: translateY(0);
 		}
 	`);
 
@@ -603,6 +627,49 @@
 		}
 	}
 
+	/**
+	 * 監聽場館切換 modal 並添加快速切換按鈕
+	 */
+	function addQuickLocationButtons() {
+		function tryInsertButtons(retry = 0) {
+			const form = document.querySelector('#editor-location');
+			if (!form) return;
+			const locationSelect = form.querySelector('select#location_id');
+			if (!locationSelect) {
+				if (retry < 50) setTimeout(() => tryInsertButtons(retry + 1), 100);
+				return;
+			}
+			if (form.querySelector('.quick-location-buttons')) return;
+			if (locationSelect.options.length === 0) {
+				if (retry < 50) setTimeout(() => tryInsertButtons(retry + 1), 100);
+				return;
+			}
+			const yogaOptions = Array.from(locationSelect.options).filter(option => option.text.includes('THE KEY YOGA'));
+			if (yogaOptions.length === 0) return;
+			const buttonContainer = document.createElement('div');
+			buttonContainer.className = 'quick-location-buttons';
+			yogaOptions.forEach(option => {
+				const btn = document.createElement('button');
+				btn.type = 'button';
+				btn.className = 'quick-location-btn';
+				btn.textContent = option.text.replace('THE KEY YOGA ', '');
+				btn.setAttribute('data-location-id', option.value);
+				btn.addEventListener('click', () => {
+					locationSelect.value = option.value;
+					locationSelect.dispatchEvent(new Event('change'));
+					setTimeout(() => {
+						const confirmBtn = form.querySelector('button#change_store');
+						if (confirmBtn) confirmBtn.click();
+					}, 100);
+				});
+				buttonContainer.appendChild(btn);
+			});
+			locationSelect.parentNode.appendChild(buttonContainer);
+			console.log('已添加快速切換場館按鈕');
+		}
+		waitForElement('#editor-location', () => tryInsertButtons());
+	}
+
 	// 主流程
 	registerMenuCommands();
 	(async function main() {
@@ -613,5 +680,6 @@
 			console.log("偵測到會員詳細頁面,啟動遲到取消紀錄檢查");
 			handleMemberDetailPage();
 		}
+		addQuickLocationButtons();
 	})();
 })();
