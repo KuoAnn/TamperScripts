@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1004.1730
+// @version      1.25.1004.1731
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單,支援黃牌簽到/取消操作
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -56,6 +56,9 @@
 		}
 		.booking-list-table tr.late-cancel-row {
 			background-color: #fff9c4 !important;
+		}
+		.booking-list-table tr.no-show-row {
+			background-color: #ffcdd2 !important;
 		}
 		.booking-list-table .status-check_in {
 			color: #2e7d32;
@@ -413,14 +416,15 @@
 			punished: "🟨撤銷",
 			cancel: "❌取消",
 			waiting: "😢候補",
+			no_show: "😞缺席"
 		};
 
 		let html = '<div class="booking-list-container">';
 		html += '<table class="booking-list-table">';
 		html += "<thead><tr>";
 		html += "<th>狀態</th>";
-		html += "<th>日期/時間</th>";
-		html += "<th>課程/教練</th>";
+		html += "<th>日期</th>";
+		html += "<th>課程</th>";
 		html += "<th>教室</th>";
 		html += "</tr></thead>";
 		html += "<tbody>";
@@ -429,7 +433,12 @@
 			const statusClass = `status-${record.status_name}`;
 			const statusText = statusMap[record.status_name] || record.status_name;
 			const roomName = (record.room_name || '').replace(/教室/g, '');
-			const rowClass = record.status_name === 'late_cancel' ? 'late-cancel-row' : '';
+			let rowClass = '';
+			if (record.status_name === 'late_cancel') {
+				rowClass = 'late-cancel-row';
+			} else if (record.status_name === 'no_show') {
+				rowClass = 'no-show-row';
+			}
 			
 			// 日期/時間格式 MM/DD HH:mm
 			let mmdd = record.class_day;
@@ -451,8 +460,8 @@
 			// 黃牌狀態顯示操作按鈕
 			if (record.status_name === 'late_cancel') {
 				html += `<br><div class="action-buttons">
-					<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
-					<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">撤銷(不扣課)</button>
+					<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">補簽</button>
+					<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不懲罰</button>
 				</div>`;
 			}
 			
@@ -527,9 +536,9 @@
 				// 確認視窗
 				let confirmMsg = '';
 				if (actionType === 'check_in') {
-					confirmMsg = '請確認是否簽到 (扣課)？';
+					confirmMsg = '請確認是否進行補簽 (扣課)？';
 				} else if (actionType === 'punished') {
-					confirmMsg = '請確認是否撤銷 (不扣課)？';
+					confirmMsg = "請確認是否進行黃牌不懲罰 (不扣課)？";
 				} else {
 					confirmMsg = '請確認是否執行此操作？';
 				}
