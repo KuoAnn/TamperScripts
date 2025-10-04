@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1004.1830
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單,支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕
+// @version      1.25.1004.2200
+// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單,支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -124,7 +124,7 @@
 		}
 		.quick-location-btn {
 			padding: 8px 16px;
-			background-color: #007bff;
+			background-color: #5d8fc2;
 			color: white;
 			border: none;
 			border-radius: 4px;
@@ -139,6 +139,31 @@
 		}
 		.quick-location-btn:active {
 			transform: translateY(0);
+		}
+		.membership-status-badge {
+			display: inline-block;
+			padding: 4px 12px;
+			margin-left: 10px;
+			border-radius: 12px;
+			font-size: 13px;
+			font-weight: 500;
+			color: white;
+		}
+		.membership-status-badge.status-active {
+			background-color: #4caf50;
+		}
+		.membership-status-badge.status-suspended {
+			background-color: #b4461c;
+		}
+		.membership-status-badge.status-default {
+			background-color: #9e9e9e;
+		}
+		.cancel-no-show-container {
+			margin-top: 8px;
+			margin-bottom: 8px;
+		}
+		.cancel-no-show-container .btn {
+			font-size: 13px;
 		}
 	`);
 
@@ -210,6 +235,23 @@
 			setTimeout(() => waitForElement(selector, callback, retry + 1), 100);
 		} else {
 			console.error(`waitForElement: 超過最大重試次數,未找到元素 ${selector}`);
+		}
+	}
+
+	/**
+	 * 等待指定元素出現且有值後執行 callback,最多嘗試 50 次避免無限遞迴
+	 * @param {string} selector CSS 選擇器
+	 * @param {Function} callback 執行函式
+	 * @param {number} [retry=0] 重試次數
+	 */
+	function waitForElementWithValue(selector, callback, retry = 0) {
+		const el = document.querySelector(selector);
+		if (el && el.value && el.value.trim() !== '') {
+			callback();
+		} else if (retry < 50) {
+			setTimeout(() => waitForElementWithValue(selector, callback, retry + 1), 100);
+		} else {
+			console.error(`waitForElementWithValue: 超過最大重試次數,未找到有值的元素 ${selector}`);
 		}
 	}
 
@@ -301,6 +343,143 @@
 	}
 
 	/**
+	 * 從頁面取得會籍狀態
+	 * @returns {Promise<{text: string, badgeClass: string}|null>} 會籍狀態物件或 null
+	 */
+	async function getMembershipStatus() {
+		return new Promise((resolve) => {
+			// 等待會籍表格載入
+			waitForElement("#member_package .package_list table tbody tr", () => {
+				// 嘗試找到會籍狀態欄位
+				const statusCell = document.querySelector("#member_package .package_list table tbody tr td:nth-child(3)");
+				if (statusCell) {
+					const statusText = statusCell.textContent.trim();
+					let badgeClass = 'status-default';
+					
+					// 根據狀態文字決定 badge 樣式
+					if (statusText === '使用中') {
+						badgeClass = 'status-active';
+					} else if (statusText.includes('No show 停權中') || statusText.includes('停權中')) {
+						badgeClass = 'status-suspended';
+					}
+					
+					let displayText = statusText;
+					if (statusText.includes('No show 停權中')) {
+						displayText = '停權中';
+					}
+					resolve({ text: displayText, badgeClass: badgeClass });
+				} else {
+					console.log("找不到會籍狀態欄位");
+					resolve(null);
+				}
+			});
+		});
+	}
+
+	/**
+	 * 點擊「管理」按鈕並等待表單載入,取得 merge_id
+	 * @returns {Promise<string|null>} merge_id 或 null
+	 */
+	async function getMergeIdFromNoShowRow() {
+		return new Promise((resolve) => {
+			// 尋找會籍狀態為 "No show 停權中" 的那一列
+			const rows = document.querySelectorAll('#member_package .package_list table tbody tr');
+			let tradeButton = null;
+			
+			for (const row of rows) {
+				const statusCell = row.querySelector('td:nth-child(3)');
+				if (statusCell && statusCell.textContent.trim().includes('No show 停權中')) {
+					// 找到對應的管理按鈕
+					tradeButton = row.querySelector('button.trade_bar');
+					break;
+				}
+			}
+			
+			if (!tradeButton) {
+				console.error('找不到 No show 停權中的管理按鈕');
+				resolve(null);
+				return;
+			}
+			
+			console.log('找到管理按鈕,準備點擊');
+			// 點擊管理按鈕
+			tradeButton.click();
+			
+			// 等待表單載入並取得 merge_id (使用 waitForElementWithValue 等待欄位有值)
+			waitForElementWithValue('#member_package .search_form [name="merge_id"]', () => {
+				const mergeIdInput = document.querySelector('#member_package .search_form [name="merge_id"]');
+				if (mergeIdInput && mergeIdInput.value) {
+					const mergeId = mergeIdInput.value;
+					console.log('成功取得 merge_id:', mergeId);
+					resolve(mergeId);
+				} else {
+					console.error('找不到 merge_id 或值為空');
+					resolve(null);
+				}
+			});
+		});
+	}
+
+	/**
+	 * 建立「解除 No show 停權」按鈕
+	 * @returns {HTMLElement|null} 按鈕元素或 null
+	 */
+	function createCancelNoShowButton() {
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.className = 'btn btn-danger btn-xs cancel_no_show';
+		button.textContent = '解除';
+		button.style.marginLeft = '8px';
+		
+		// 綁定點擊事件
+		button.addEventListener('click', async function() {
+			// 確認視窗
+			if (!window.confirm('確定要解除 No show 停權嗎?')) {
+				return;
+			}
+			
+			// 禁用按鈕防止重複點擊
+			button.disabled = true;
+			button.textContent = '處理中...';
+			
+			try {
+				// 點擊管理按鈕並等待表單載入,取得 merge_id
+				console.log('開始取得 merge_id...');
+				const mergeId = await getMergeIdFromNoShowRow();
+				
+				if (!mergeId) {
+					alert('無法取得會籍 ID,請重新整理頁面後再試');
+					button.disabled = false;
+					button.textContent = '解除';
+					return;
+				}
+				
+				console.log(`執行解除 No show 停權: merge_id=${mergeId}`);
+				const response = await cancelNoShow(mergeId);
+				console.log('API 回應:', response);
+				
+				// 根據回應顯示訊息
+				if (response && response.message === 'success') {
+					alert('解除停權成功');
+					window.location.reload();
+				} else {
+					const message = response && response.message ? response.message : '未知錯誤';
+					alert(`解除停權失敗：${message}`);
+					button.disabled = false;
+					button.textContent = '解除';
+				}
+			} catch (err) {
+				console.error('解除停權失敗:', err);
+				alert(`解除停權失敗：${err.message}`);
+				button.disabled = false;
+				button.textContent = '解除';
+			}
+		});
+		
+		return button;
+	}
+
+	/**
 	 * 呼叫 API 取得會員預約課程清單
 	 * @param {string} account 會員帳號(電話號碼)
 	 * @returns {Promise<Object|null>} API 回應資料或 null
@@ -311,7 +490,7 @@
 			const endDate = new Date();
 			endDate.setDate(endDate.getDate() + 2); // endDate 改為當天+2
 			const startDate = new Date();
-			startDate.setMonth(startDate.getMonth() - 1); // 查詢最近一個月
+			startDate.setDate(startDate.getDate() - 45); // 查詢最近一個半月
 
 			const startDay = startDate.toISOString().split("T")[0];
 			const endDay = endDate.toISOString().split("T")[0];
@@ -423,6 +602,44 @@
 	}
 
 	/**
+	 * 執行解除 No show 停權
+	 * @param {string} mergeId 會籍 ID (從 data-trade_id 取得)
+	 * @returns {Promise<Object>} API 回應資料
+	 */
+	async function cancelNoShow(mergeId) {
+		return new Promise((resolve, reject) => {
+			const now = Date.now();
+			const url = `https://admin.hypercore.com.tw/?c=member&m=cancelNoShow&random=${now}`;
+			
+			// 建立 FormData
+			const formData = new URLSearchParams();
+			formData.append('merge_id', mergeId);
+
+			GM_xmlhttpRequest({
+				method: "POST",
+				url: url,
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded",
+				},
+				data: formData.toString(),
+				onload: function (response) {
+					try {
+						const data = JSON.parse(response.responseText);
+						resolve(data);
+					} catch (err) {
+						console.error("解析 cancelNoShow API 回應失敗:", err);
+						reject(err);
+					}
+				},
+				onerror: function (err) {
+					console.error("cancelNoShow API 請求失敗:", err);
+					reject(err);
+				},
+			});
+		});
+	}
+
+	/**
 	 * 建立預約清單表格 HTML
 	 * @param {Object} data API 回應資料
 	 * @returns {string} 表格 HTML 字串
@@ -434,10 +651,10 @@
 
 		// 狀態名稱對應
 		const statusMap = {
-			reserved: "📅預約",
+			reserved: "📅預約中",
 			check_in: "✅簽到",
 			late_cancel: "⚠️黃牌",
-			punished: "🟨撤銷",
+			punished: "🟨黃牌不罰",
 			cancel: "❌取消",
 			waiting: "😢候補",
 			no_show: "😞缺席"
@@ -505,8 +722,9 @@
 	/**
 	 * 將預約清單表格插入到頁面
 	 * @param {Object} data API 回應資料
+	 * @param {Object} membershipStatus 會籍狀態物件 {text, badgeClass}
 	 */
-	function insertBookListTable(data) {
+	function insertBookListTable(data, membershipStatus) {
 		// 尋找目標容器
 		const targetContainer = document.querySelector(".content-wrap .content .row .col-md-5");
 		if (!targetContainer) {
@@ -516,14 +734,34 @@
 
 		// 移除所有舊的 booking-list-container
 		targetContainer.querySelectorAll('.booking-list-container').forEach(e => e.remove());
+		// 移除舊的標題和按鈕容器
+		targetContainer.querySelectorAll('.booking-list-title').forEach(e => e.remove());
+		targetContainer.querySelectorAll('.cancel-no-show-container').forEach(e => e.remove());
 
 		// 計算總筆數
 		const totalCount = (data && data.aaData && Array.isArray(data.aaData)) ? data.aaData.length : 0;
 
-		// 顯示標題
+		// 顯示標題與會籍狀態 badge
 		const titleDiv = document.createElement("div");
 		titleDiv.className = "booking-list-title";
 		titleDiv.textContent = `上課紀錄 (共 ${totalCount} 筆)`;
+
+		// 如果有會籍狀態,添加 badge
+		if (membershipStatus && membershipStatus.text) {
+			const badge = document.createElement("span");
+			badge.className = `membership-status-badge ${membershipStatus.badgeClass}`;
+			badge.textContent = membershipStatus.text;
+
+			// 僅當狀態為「停權中」時顯示解除按鈕
+			if (membershipStatus.text === '停權中') {
+				const cancelButton = createCancelNoShowButton();
+				if (cancelButton) {
+					badge.appendChild(cancelButton);
+				}
+			}
+			titleDiv.appendChild(badge);
+		}
+
 		targetContainer.appendChild(titleDiv);
 
 		// 建立並插入表格
@@ -620,8 +858,14 @@
 
 			console.log("成功取得會員預約清單", data);
 			
-			// 插入預約清單表格到頁面
-			insertBookListTable(data);
+			// 取得會籍狀態
+			const membershipStatus = await getMembershipStatus();
+			if (membershipStatus) {
+				console.log("會籍狀態:", membershipStatus);
+			}
+			
+			// 插入預約清單表格到頁面,並傳入會籍狀態
+			insertBookListTable(data, membershipStatus);
 		} catch (err) {
 			console.error("處理會員詳細頁面失敗:", err);
 		}
