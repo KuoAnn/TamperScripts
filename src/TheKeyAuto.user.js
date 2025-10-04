@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1004.2200
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單,支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能
+// @version      1.25.1004.2330
+// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -75,11 +75,65 @@
 			margin-bottom: 10px;
 			margin-top: 6px;
 			color: #333;
+			cursor: pointer;
+			text-decoration: underline;
+			color: #007bff;
+		}
+		.booking-list-title:hover {
+			color: #0056b3;
+		}
+		.booking-modal {
+			display: none;
+			position: fixed;
+			z-index: 9999;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			overflow: auto;
+			background-color: rgba(0,0,0,0.7);
+		}
+		.booking-modal-content {
+			background-color: #fefefe;
+			margin: 2% auto;
+			padding: 20px;
+			border: 1px solid #888;
+			width: 95%;
+			max-width: 1400px;
+			border-radius: 8px;
+			box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+			max-height: 90vh;
+			overflow-y: auto;
+		}
+		.booking-modal-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 20px;
+			border-bottom: 2px solid #007bff;
+			padding-bottom: 10px;
+		}
+		.booking-modal-header h2 {
+			margin: 0;
+			color: #333;
+			font-size: 24px;
+		}
+		.booking-modal-close {
+			color: #aaa;
+			font-size: 32px;
+			font-weight: bold;
+			cursor: pointer;
+			transition: color 0.2s;
+		}
+		.booking-modal-close:hover,
+		.booking-modal-close:focus {
+			color: #000;
 		}
 		.action-buttons {
 			display: flex;
 			gap: 8px;
-			flex-direction: column;
+			flex-direction: row;
+			justify-content: center;
 		}
 		.action-btn {
 			padding: 6px 12px;
@@ -640,6 +694,17 @@
 	}
 
 	/**
+	 * 取得星期幾的中文名稱
+	 * @param {string} dateStr 日期字串 YYYY-MM-DD
+	 * @returns {string} 星期幾的中文 (一~日)
+	 */
+	function getWeekdayInChinese(dateStr) {
+		const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+		const date = new Date(dateStr);
+		return weekdays[date.getDay()];
+	}
+
+	/**
 	 * 建立預約清單表格 HTML
 	 * @param {Object} data API 回應資料
 	 * @returns {string} 表格 HTML 字串
@@ -681,11 +746,13 @@
 				rowClass = 'no-show-row';
 			}
 			
-			// 日期/時間格式 MM/DD HH:mm
+			// 日期/時間格式 MM/dd (一)<br>HH:mm
 			let mmdd = record.class_day;
+			let weekday = '';
 			if (/^\d{4}-\d{2}-\d{2}$/.test(record.class_day)) {
 				const parts = record.class_day.split('-');
 				mmdd = parts[1] + '/' + parts[2];
+				weekday = getWeekdayInChinese(record.class_day);
 			}
 			
 			// class_time 可能是 HH:mm:ss 或 HH:mm
@@ -693,7 +760,7 @@
 			if (/^\d{2}:\d{2}/.test(record.class_time)) {
 				hhmm = record.class_time.substring(0, 5);
 			}
-			const dateTime = `${mmdd} ${hhmm}`;
+			const dateTime = `${mmdd} (${weekday})<br>${hhmm}`;
 			
 			html += `<tr class="${rowClass}">`;
 			html += `<td class="${statusClass}">${statusText}`;
@@ -702,7 +769,7 @@
 			if (record.status_name === 'late_cancel') {
 				html += `<br><div class="action-buttons">
 					<button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">補簽</button>
-					<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不懲罰</button>
+					<button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不罰</button>
 				</div>`;
 			}
 			
@@ -720,39 +787,35 @@
 	}
 
 	/**
-	 * 將預約清單表格插入到頁面
+	 * 將預約清單表格插入到頁面 (彈窗模式)
 	 * @param {Object} data API 回應資料
 	 * @param {Object} membershipStatus 會籍狀態物件 {text, badgeClass}
 	 */
 	function insertBookListTable(data, membershipStatus) {
-		// 尋找目標容器
-		const targetContainer = document.querySelector(".content-wrap .content .row .col-md-5");
-		if (!targetContainer) {
-			console.error("找不到目標容器 .content-wrap .content .row .col-md-5");
+		// 尋找會員資訊區塊
+		const memberProfileSection = document.getElementById('member_profile_info');
+		if (!memberProfileSection) {
+			console.error('找不到 #member_profile_info');
 			return;
 		}
-
-		// 移除所有舊的 booking-list-container
-		targetContainer.querySelectorAll('.booking-list-container').forEach(e => e.remove());
-		// 移除舊的標題和按鈕容器
-		targetContainer.querySelectorAll('.booking-list-title').forEach(e => e.remove());
-		targetContainer.querySelectorAll('.cancel-no-show-container').forEach(e => e.remove());
-
+		// 找到第二個 col-md-6
+		const colMd6List = memberProfileSection.querySelectorAll('.col-md-6');
+		if (colMd6List.length < 2) {
+			console.error('找不到第二個 .col-md-6');
+			return;
+		}
+		const targetCol = colMd6List[1];
+		// 移除舊的 booking-list-title
+		targetCol.querySelectorAll('.booking-list-title').forEach(e => e.remove());
 		// 計算總筆數
 		const totalCount = (data && data.aaData && Array.isArray(data.aaData)) ? data.aaData.length : 0;
-
-		// 顯示標題與會籍狀態 badge
-		const titleDiv = document.createElement("div");
-		titleDiv.className = "booking-list-title";
-		titleDiv.textContent = `上課紀錄 (共 ${totalCount} 筆)`;
-
-		// 如果有會籍狀態,添加 badge
+		// 建立只顯示 badge 的容器
+		const titleDiv = document.createElement('div');
+		titleDiv.className = 'booking-list-title';
 		if (membershipStatus && membershipStatus.text) {
-			const badge = document.createElement("span");
+			const badge = document.createElement('span');
 			badge.className = `membership-status-badge ${membershipStatus.badgeClass}`;
 			badge.textContent = membershipStatus.text;
-
-			// 僅當狀態為「停權中」時顯示解除按鈕
 			if (membershipStatus.text === '停權中') {
 				const cancelButton = createCancelNoShowButton();
 				if (cancelButton) {
@@ -761,18 +824,36 @@
 			}
 			titleDiv.appendChild(badge);
 		}
-
-		targetContainer.appendChild(titleDiv);
-
-		// 建立並插入表格
-		const tableHTML = createBookListTable(data);
-		const tableContainer = document.createElement("div");
-		tableContainer.innerHTML = tableHTML;
-		targetContainer.appendChild(tableContainer);
-
-		console.log("預約清單已插入到頁面");
-		
-		// 綁定動作按鈕事件監聽器
+		// 建立彈窗
+		const modal = document.createElement('div');
+		modal.className = 'booking-modal';
+		modal.innerHTML = `
+			<div class="booking-modal-content">
+				<div class="booking-modal-header">
+					<h2>上課紀錄 (共 ${totalCount} 筆)</h2>
+					<span class="booking-modal-close">&times;</span>
+				</div>
+				${createBookListTable(data)}
+			</div>
+		`;
+		// 點擊 badge 時顯示彈窗
+		titleDiv.addEventListener('click', () => {
+			modal.style.display = 'block';
+		});
+		// 點擊關閉按鈕或背景時關閉彈窗
+		const closeBtn = modal.querySelector('.booking-modal-close');
+		closeBtn.addEventListener('click', () => {
+			modal.style.display = 'none';
+		});
+		modal.addEventListener('click', (event) => {
+			if (event.target === modal) {
+				modal.style.display = 'none';
+			}
+		});
+		// 插入到第二個 col-md-6 的最下方
+		targetCol.appendChild(titleDiv);
+		document.body.appendChild(modal);
+		console.log('預約清單已插入到會員資訊區塊 (彈窗模式)');
 		bindActionButtonEvents();
 	}
 
