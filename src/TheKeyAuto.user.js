@@ -31,9 +31,15 @@
 		.booking-list-table th,
 		.booking-list-table td {
 			padding: 10px;
-			text-align: left;
+			text-align: center;
 			border: 1px solid #ddd;
 			font-size: 14px;
+		}
+		.booking-list-table th {
+			background-color: #f5f5f5;
+			font-weight: bold;
+			color: #333;
+			text-align: center;
 		}
 		.booking-list-table th {
 			background-color: #f5f5f5;
@@ -409,7 +415,7 @@
 		};
 
 		let html = '<div class="booking-list-container">';
-		html += `<div class="booking-list-title">📋 上課清單 (最近一個月，共 ${data.aaData.length} 筆)</div>`;
+		html += `<div class="booking-list-title">📋 上課紀錄 (最近一個月，共 ${data.aaData.length} 筆)</div>`;
 		html += '<table class="booking-list-table">';
 		   html += "<thead><tr>";
 		   html += "<th>狀態</th>";
@@ -429,8 +435,8 @@
 			   html += `<td class="${statusClass}">${statusText}`;
 			   if (record.status_name === 'late_cancel') {
 				   html += `<br><div class="action-buttons">
-					   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button><br>
-					   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">取消(不扣課)</button>
+					   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">簽到(扣課)</button>
+					   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">撤銷(不扣課)</button>
 				   </div>`;
 			   }
 			   html += `</td>`;
