@@ -28,6 +28,8 @@
 
 ## 維護與發佈
 - 腳本更新時，務必同步更新 `@version`，確保 Tampermonkey 能自動偵測並提示用戶升級。
+  - 版本更新若為 3 碼則遵循語意化版本號（Semantic Versioning），格式為 `主版本號.次版本號.修訂號`，例如 `1.0.0`。
+  - 若版本號包含日期時間，請使用 `1.YY.MMDD.HHMM` 格式，例如 `1.24.0615.1030`。
 - `@downloadURL` 與 `@updateURL` 必須指向正確的 raw GitHub 路徑。
 - 建議於 README.md 列出所有腳本安裝連結與簡介，方便用戶快速選用。
 
