@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1005.1224
+// @version      1.25.1005.1716
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過 Service Account 存取)
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -753,7 +753,7 @@
 	}
 
 	/**
-	 * 點擊「管理」按鈕並等待表單載入,取得 merge_id
+	 * 點擊管理按鈕並等待表單載入,取得 merge_id
 	 * @returns {Promise<string|null>} merge_id 或 null
 	 */
 	async function getMergeIdFromNoShowRow() {
@@ -797,6 +797,44 @@
 	}
 
 	/**
+	 * 執行解除 No show 停權 - 透過點擊頁面上的按鈕
+	 * @returns {Promise<boolean>} 是否成功點擊按鈕
+	 */
+	async function cancelNoShow() {
+		return new Promise(async (resolve, reject) => {
+			try {
+				// 先取得 merge_id
+				const mergeId = await getMergeIdFromNoShowRow();
+				
+				if (!mergeId) {
+					console.error("無法取得 merge_id");
+					reject(new Error("無法取得 merge_id"));
+					return;
+				}
+
+				console.log(`已取得 merge_id: ${mergeId}, 準備點擊解除按鈕`);
+
+				// 等待「解除 No show 停權」按鈕出現並點擊
+				// 使用更精確的選擇器,確保選到的是頁面上的按鈕,而不是腳本產生的按鈕
+				waitForElement(".form-actions .cancel_no_show", () => {
+					const cancelButton = document.querySelector(".form-actions .cancel_no_show");
+					if (cancelButton) {
+						console.log("找到「解除 No show 停權」按鈕,準備點擊");
+						cancelButton.click();
+						resolve(true);
+					} else {
+						console.error("找不到「解除 No show 停權」按鈕");
+						reject(new Error("找不到「解除 No show 停權」按鈕"));
+					}
+				});
+			} catch (err) {
+				console.error("cancelNoShow 執行失敗:", err);
+				reject(err);
+			}
+		});
+	}
+
+	/**
 	 * 建立「解除 No show 停權」按鈕
 	 * @returns {HTMLElement|null} 按鈕元素或 null
 	 */
@@ -819,31 +857,11 @@
 			button.textContent = "處理中...";
 
 			try {
-				// 點擊管理按鈕並等待表單載入,取得 merge_id
-				console.log("開始取得 merge_id...");
-				const mergeId = await getMergeIdFromNoShowRow();
+				console.log("開始執行解除 No show 停權...");
+				await cancelNoShow();
+				console.log("已點擊「解除 No show 停權」按鈕");
 
-				if (!mergeId) {
-					alert("無法取得會籍 ID,請重新整理頁面後再試");
-					button.disabled = false;
-					button.textContent = "解除";
-					return;
-				}
-
-				console.log(`執行解除 No show 停權: merge_id=${mergeId}`);
-				const response = await cancelNoShow(mergeId);
-				console.log("API 回應:", response);
-
-				// 根據回應顯示訊息
-				if (response && response.message === "success") {
-					alert("解除停權成功");
-					window.location.reload();
-				} else {
-					const message = response && response.message ? response.message : "未知錯誤";
-					alert(`解除停權失敗：${message}`);
-					button.disabled = false;
-					button.textContent = "解除";
-				}
+				// 等待一段時間讓系統處理,然後重新載入頁面
 			} catch (err) {
 				console.error("解除停權失敗:", err);
 				alert(`解除停權失敗：${err.message}`);
@@ -971,44 +989,6 @@
 				},
 				onerror: function (err) {
 					console.error("setBook API 請求失敗:", err);
-					reject(err);
-				},
-			});
-		});
-	}
-
-	/**
-	 * 執行解除 No show 停權
-	 * @param {string} mergeId 會籍 ID (從 data-trade_id 取得)
-	 * @returns {Promise<Object>} API 回應資料
-	 */
-	async function cancelNoShow(mergeId) {
-		return new Promise((resolve, reject) => {
-			const now = Date.now();
-			const url = `https://admin.hypercore.com.tw/?c=member&m=cancelNoShow&random=${now}`;
-
-			// 建立 FormData
-			const formData = new URLSearchParams();
-			formData.append("merge_id", mergeId);
-
-			GM_xmlhttpRequest({
-				method: "POST",
-				url: url,
-				headers: {
-					"Content-Type": "application/x-www-form-urlencoded",
-				},
-				data: formData.toString(),
-				onload: function (response) {
-					try {
-						const data = JSON.parse(response.responseText);
-						resolve(data);
-					} catch (err) {
-						console.error("解析 cancelNoShow API 回應失敗:", err);
-						reject(err);
-					}
-				},
-				onerror: function (err) {
-					console.error("cancelNoShow API 請求失敗:", err);
 					reject(err);
 				},
 			});
