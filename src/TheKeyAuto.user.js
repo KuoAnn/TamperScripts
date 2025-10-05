@@ -365,8 +365,7 @@
 	function arrayBufferToBase64Url(buffer) {
 		const bytes = new Uint8Array(buffer);
 		let binary = "";
-		// 排除標題列
-		for (let i = 1; i < bytes.byteLength; i++) {
+		for (let i = 0; i < bytes.byteLength; i++) {
 			binary += String.fromCharCode(bytes[i]);
 		}
 		return base64UrlEncode(binary);
@@ -1367,7 +1366,18 @@
 				return;
 			}
 
-			console.log(`已載入 ${Object.keys(namePhoneMap).length} 筆姓名電話資料`);
+			const totalCount = Object.keys(namePhoneMap).length;
+			console.log(`已載入 ${totalCount} 筆姓名電話資料`);
+
+			// 顯示資料總數於 input placeholder
+			function setPhoneInputPlaceholder() {
+				const phoneInput = document.querySelector('input[name="search_phone"]');
+				if (phoneInput) {
+					phoneInput.placeholder = `請輸入姓名或電話 (共 ${totalCount} 筆搜尋)`;
+				}
+			}
+			// 初始設置 placeholder
+			setPhoneInputPlaceholder();
 
 			// 等待會員查詢 modal 出現
 			function setupFuzzySearch(retry = 0) {
