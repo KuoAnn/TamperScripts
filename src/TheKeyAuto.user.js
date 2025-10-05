@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1005.0002
+// @version      1.25.1005.1223
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過 Service Account 存取)
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -593,9 +593,9 @@
 								return;
 							}
 
-							// 將資料轉換為 {姓名: 電話} 物件
+							// 將資料轉換為 {姓名: 電話} 物件，排除第一列（標題列）
 							const namePhoneMap = {};
-							for (let i = 0; i < data.values.length; i++) {
+							for (let i = 1; i < data.values.length; i++) {
 								const row = data.values[i];
 								if (row.length < 2) continue;
 
@@ -608,7 +608,7 @@
 								}
 							}
 
-							console.log(`成功取得 ${Object.keys(namePhoneMap).length} 筆姓名電話資料`);
+							console.log(`成功取得 ${Object.keys(namePhoneMap).length} 筆姓名電話資料（已排除標題列）`);
 
 							// 儲存快取
 							await GM_setValue("google_sheet_cache", JSON.stringify(namePhoneMap));
