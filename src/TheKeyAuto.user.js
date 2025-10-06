@@ -416,7 +416,7 @@
 			await GM_setValue("thekey_email", email);
 			await GM_setValue("thekey_password", password);
 
-			alert("帳號與密碼已儲存！");
+			window.location.reload();
 			closeModal();
 		});
 
@@ -509,7 +509,7 @@
 			await GM_setValue("google_access_token", null);
 			await GM_setValue("google_access_token_expire", null);
 
-			alert("Google Sheet 設定已儲存！");
+			window.location.reload();
 			closeModal();
 		});
 	}
@@ -1451,8 +1451,6 @@
 
 				// 根據回應顯示訊息
 				if (response?.message === "success") {
-					const actionText = actionType === "check_in" ? "簽到" : "取消";
-					alert(`${actionText}成功`);
 					window.location.reload();
 				} else {
 					const message = response?.message || "未知錯誤";
