@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1006.1234
+// @version      1.25.1006.1858
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過 Service Account 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -1563,6 +1563,18 @@
 				inputElement.value = result.phone;
 				// 清除所有 badge
 				clearFuzzySearchBadges();
+				// 自動觸發查詢 submit
+				const form = inputElement.closest("form");
+				if (form) {
+					// 顯示 loading 狀態
+					const submitBtn = form.querySelector("#submitBtn");
+					if (submitBtn) {
+						submitBtn.querySelector(".default-text").style.display = "none";
+						submitBtn.querySelector(".loading-text").style.display = "inline-block";
+					}
+					// 觸發 submit
+					form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+				}
 			});
 		});
 
