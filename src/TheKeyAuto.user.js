@@ -608,10 +608,7 @@
 	 */
 	function arrayBufferToBase64Url(buffer) {
 		const bytes = new Uint8Array(buffer);
-		let binary = "";
-		for (let i = 0; i < bytes.byteLength; i++) {
-			binary += String.fromCharCode(bytes[i]);
-		}
+		const binary = String.fromCharCode(...bytes);
 		return base64UrlEncode(binary);
 	}
 
@@ -645,10 +642,7 @@
 		return await crypto.subtle.importKey(
 			"pkcs8",
 			bytes.buffer,
-			{
-				name: "RSASSA-PKCS1-v1_5",
-				hash: "SHA-256",
-			},
+			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
 			false,
 			["sign"]
 		);
@@ -1316,7 +1310,7 @@
 			   <table class="booking-list-table">
 				   <thead><tr>
 					   <th>狀態</th>
-					   <th>日期時間</th>
+					   <th>時間</th>
 					   <th>課程</th>
 					   <th>教練</th>
 					   <th>教室</th>
