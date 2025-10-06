@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1006.1233
+// @version      1.25.1006.1234
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過 Service Account 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -80,6 +80,7 @@
 		.booking-list-title:hover {
 			color: #0056b3;
 		}
+		.booking-list-table tr:nth-child(even) { background: #e6f3ff; }
 		.booking-modal {
 			display: none;
 			position: fixed;
@@ -1048,7 +1049,7 @@
 			try {
 				// 先取得 merge_id
 				const mergeId = await getMergeIdFromNoShowRow();
-				
+
 				if (!mergeId) {
 					console.error("無法取得 merge_id");
 					reject(new Error("無法取得 merge_id"));
@@ -1269,38 +1270,38 @@
 			no_show: "😞缺席",
 		};
 
-		   const rows = data.aaData
-			   .map((record) => {
-				   const statusClass = `status-${record.status_name}`;
-				   const statusText = statusMap[record.status_name] || record.status_name;
-				   // 場館名稱（移除 'THE KEY YOGA '）
-				   const venueName = (record.location_name || "").replace("THE KEY YOGA ", "");
-				   // 教室名稱（移除 '教室'）
-				   const roomName = (record.room_name || "").replace(/教室/g, "");
+		const rows = data.aaData
+			.map((record) => {
+				const statusClass = `status-${record.status_name}`;
+				const statusText = statusMap[record.status_name] || record.status_name;
+				// 場館名稱（移除 'THE KEY YOGA '）
+				const venueName = (record.location_name || "").replace("THE KEY YOGA ", "");
+				// 教室名稱（移除 '教室'）
+				const roomName = (record.room_name || "").replace(/教室/g, "");
 
-				   const rowClass = record.status_name === "late_cancel" ? "late-cancel-row" : record.status_name === "no_show" ? "no-show-row" : "";
+				const rowClass = record.status_name === "late_cancel" ? "late-cancel-row" : record.status_name === "no_show" ? "no-show-row" : "";
 
-				   // 日期/時間格式 MM/dd (一) HH:mm
-				   let mmdd = record.class_day;
-				   let weekday = "";
-				   if (/^\d{4}-\d{2}-\d{2}$/.test(record.class_day)) {
-					   const parts = record.class_day.split("-");
-					   mmdd = `${parts[1]}/${parts[2]}`;
-					   weekday = getWeekdayInChinese(record.class_day);
-				   }
-				   const hhmm = record.class_time.substring(0, 5);
-				   const dateTime = `${mmdd} (${weekday}) ${hhmm}`;
+				// 日期/時間格式 MM/dd (一) HH:mm
+				let mmdd = record.class_day;
+				let weekday = "";
+				if (/^\d{4}-\d{2}-\d{2}$/.test(record.class_day)) {
+					const parts = record.class_day.split("-");
+					mmdd = `${parts[1]}/${parts[2]}`;
+					weekday = getWeekdayInChinese(record.class_day);
+				}
+				const hhmm = record.class_time.substring(0, 5);
+				const dateTime = `${mmdd} (${weekday}) ${hhmm}`;
 
-				   // 黃牌狀態顯示操作按鈕
-				   const actionButtons =
-					   record.status_name === "late_cancel"
-						   ? `<br><div class="action-buttons">
+				// 黃牌狀態顯示操作按鈕
+				const actionButtons =
+					record.status_name === "late_cancel"
+						? `<br><div class="action-buttons">
 					   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">補簽</button>
 					   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不罰</button>
 				   </div>`
-						   : "";
+						: "";
 
-				   return `<tr class="${rowClass}">
+				return `<tr class="${rowClass}">
 				   <td class="${statusClass}">${statusText}${actionButtons}</td>
 				   <td>${dateTime}</td>
 				   <td>${record.class_name}</td>
@@ -1308,10 +1309,10 @@
 				   <td>${roomName}</td>
 				   <td>${venueName}</td>
 			   </tr>`;
-			   })
-			   .join("");
+			})
+			.join("");
 
-		   return `<div class="booking-list-container">
+		return `<div class="booking-list-container">
 			   <table class="booking-list-table">
 				   <thead><tr>
 					   <th>狀態</th>
