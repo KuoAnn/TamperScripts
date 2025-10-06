@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1006.1858
+// @version      1.25.1006.1911
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過 Service Account 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -255,7 +255,7 @@
 		}
 		.settings-modal-content {
 			background-color: #fefefe;
-			margin: 10% auto;
+			margin: 10px auto;
 			padding: 30px;
 			border: 1px solid #888;
 			border-radius: 8px;
@@ -349,12 +349,15 @@
 	`);
 
 	/**
-	 * 顯示帳號密碼設定彈窗
+	 * 顯示統一設定彈窗 (包含帳號密碼與 Google Sheets 設定)
 	 */
-	async function showCredentialsModal() {
+	async function showSettingsModal() {
 		// 取得目前儲存的值
 		const currentEmail = await GM_getValue("thekey_email", "");
 		const currentPassword = await GM_getValue("thekey_password", "");
+		const currentSheetId = await GM_getValue("google_sheet_id", "");
+		const currentServiceEmail = await GM_getValue("google_service_account_email", "");
+		const currentPrivateKey = await GM_getValue("google_service_account_private_key", "");
 
 		// 建立 modal
 		const modal = document.createElement("div");
@@ -362,7 +365,7 @@
 		modal.innerHTML = `
 			<div class="settings-modal-content">
 				<div class="settings-modal-header">
-					<h3>設定帳號密碼</h3>
+					<h3>設定</h3>
 					<span class="settings-modal-close">&times;</span>
 				</div>
 				<div class="settings-form-group">
@@ -373,86 +376,13 @@
 					<label for="settings-password">密碼</label>
 					<input type="password" id="settings-password" value="${currentPassword}" placeholder="請輸入密碼">
 				</div>
-				<div class="settings-form-actions">
-					<button class="settings-btn settings-btn-secondary" id="settings-cancel">取消</button>
-					<button class="settings-btn settings-btn-primary" id="settings-save">儲存</button>
-				</div>
-			</div>
-		`;
-
-		document.body.appendChild(modal);
-
-		// 顯示 modal
-		modal.style.display = "block";
-
-		// 關閉按鈕事件
-		const closeBtn = modal.querySelector(".settings-modal-close");
-		const cancelBtn = modal.querySelector("#settings-cancel");
-		const saveBtn = modal.querySelector("#settings-save");
-
-		const closeModal = () => {
-			modal.style.display = "none";
-			setTimeout(() => modal.remove(), 300);
-		};
-
-		closeBtn.addEventListener("click", closeModal);
-		cancelBtn.addEventListener("click", closeModal);
-
-		// 點擊背景關閉
-		modal.addEventListener("click", (event) => {
-			if (event.target === modal) closeModal();
-		});
-
-		// 儲存按鈕事件
-		saveBtn.addEventListener("click", async () => {
-			const email = modal.querySelector("#settings-email").value.trim();
-			const password = modal.querySelector("#settings-password").value.trim();
-
-			if (!email || !password) {
-				alert("帳號和密碼不能為空！");
-				return;
-			}
-
-			await GM_setValue("thekey_email", email);
-			await GM_setValue("thekey_password", password);
-
-			window.location.reload();
-			closeModal();
-		});
-
-		// Enter 鍵儲存
-		modal.addEventListener("keypress", (event) => {
-			if (event.key === "Enter") {
-				saveBtn.click();
-			}
-		});
-	}
-
-	/**
-	 * 顯示 Google Sheets Service Account 設定彈窗
-	 */
-	async function showGoogleSheetsModal() {
-		// 取得目前儲存的值
-		const currentSheetId = await GM_getValue("google_sheet_id", "");
-		const currentEmail = await GM_getValue("google_service_account_email", "");
-		const currentPrivateKey = await GM_getValue("google_service_account_private_key", "");
-
-		// 建立 modal
-		const modal = document.createElement("div");
-		modal.className = "settings-modal";
-		modal.innerHTML = `
-			<div class="settings-modal-content">
-				<div class="settings-modal-header">
-					<h3>設定 Google Sheets Service Account</h3>
-					<span class="settings-modal-close">&times;</span>
-				</div>
 				<div class="settings-form-group">
 					<label for="settings-sheet-id">Google Sheet ID</label>
 					<input type="text" id="settings-sheet-id" value="${currentSheetId}" placeholder="請輸入 Google Sheet ID">
 				</div>
 				<div class="settings-form-group">
 					<label for="settings-service-email">Service Account Email</label>
-					<input type="email" id="settings-service-email" value="${currentEmail}" placeholder="請輸入 Service Account Email">
+					<input type="email" id="settings-service-email" value="${currentServiceEmail}" placeholder="請輸入 Service Account Email">
 				</div>
 				<div class="settings-form-group">
 					<label for="settings-private-key">Service Account Private Key</label>
@@ -490,40 +420,53 @@
 
 		// 儲存按鈕事件
 		saveBtn.addEventListener("click", async () => {
+			const email = modal.querySelector("#settings-email").value.trim();
+			const password = modal.querySelector("#settings-password").value.trim();
 			const sheetId = modal.querySelector("#settings-sheet-id").value.trim();
-			const email = modal.querySelector("#settings-service-email").value.trim();
+			const serviceEmail = modal.querySelector("#settings-service-email").value.trim();
 			const privateKey = modal.querySelector("#settings-private-key").value.trim();
 
-			if (!sheetId || !email || !privateKey) {
-				alert("所有欄位都必須填寫！");
+			// 基本驗證 (帳號密碼必填)
+			if (!email || !password) {
+				alert("帳號和密碼不能為空！");
 				return;
 			}
 
+			// 儲存帳號密碼
+			await GM_setValue("thekey_email", email);
+			await GM_setValue("thekey_password", password);
+
+			// 儲存 Google Sheets 設定 (允許為空)
 			await GM_setValue("google_sheet_id", sheetId);
-			await GM_setValue("google_service_account_email", email);
+			await GM_setValue("google_service_account_email", serviceEmail);
 			await GM_setValue("google_service_account_private_key", privateKey);
 
-			// 清除快取
-			await GM_setValue("google_sheet_cache", null);
-			await GM_setValue("google_sheet_cache_time", null);
-			await GM_setValue("google_access_token", null);
-			await GM_setValue("google_access_token_expire", null);
+			// 如果有更新 Google Sheets 設定，清除快取
+			if (sheetId || serviceEmail || privateKey) {
+				await GM_setValue("google_sheet_cache", null);
+				await GM_setValue("google_sheet_cache_time", null);
+				await GM_setValue("google_access_token", null);
+				await GM_setValue("google_access_token_expire", null);
+			}
 
 			window.location.reload();
 			closeModal();
 		});
+
+		// Enter 鍵儲存 (僅限非 textarea)
+		modal.addEventListener("keypress", (event) => {
+			if (event.key === "Enter" && event.target.tagName !== "TEXTAREA") {
+				saveBtn.click();
+			}
+		});
 	}
 
 	/**
-	 * 註冊 Tampermonkey 選單命令,設定帳號與密碼
+	 * 註冊 Tampermonkey 選單命令
 	 */
 	function registerMenuCommands() {
-		GM_registerMenuCommand("設定帳密", () => {
-			showCredentialsModal();
-		});
-
-		GM_registerMenuCommand("設定 Google Sheets", () => {
-			showGoogleSheetsModal();
+		GM_registerMenuCommand("設定", () => {
+			showSettingsModal();
 		});
 	}
 
@@ -639,13 +582,7 @@
 			bytes[i] = binaryDer.charCodeAt(i);
 		}
 
-		return await crypto.subtle.importKey(
-			"pkcs8",
-			bytes.buffer,
-			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-			false,
-			["sign"]
-		);
+		return await crypto.subtle.importKey("pkcs8", bytes.buffer, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
 	}
 
 	/**
@@ -1288,12 +1225,12 @@
 
 				// 黃牌狀態顯示操作按鈕
 				const actionButtons =
-						(record.status_name === "late_cancel" || record.status_name === "no_show")
-							? `<br><div class="action-buttons">
+					record.status_name === "late_cancel" || record.status_name === "no_show"
+						? `<br><div class="action-buttons">
 						   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">補簽</button>
 						   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不罰</button>
 					   </div>`
-							: "";
+						: "";
 
 				return `<tr class="${rowClass}">
 				   <td class="${statusClass}">${statusText}${actionButtons}</td>
