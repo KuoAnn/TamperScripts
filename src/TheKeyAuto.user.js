@@ -1288,12 +1288,12 @@
 
 				// 黃牌狀態顯示操作按鈕
 				const actionButtons =
-					record.status_name === "late_cancel"
-						? `<br><div class="action-buttons">
-					   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">補簽</button>
-					   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不罰</button>
-				   </div>`
-						: "";
+						(record.status_name === "late_cancel" || record.status_name === "no_show")
+							? `<br><div class="action-buttons">
+						   <button class="action-btn action-btn-checkin" data-book-id="${record.book_id}" data-action="check_in">補簽</button>
+						   <button class="action-btn action-btn-cancel" data-book-id="${record.book_id}" data-action="punished">黃牌不罰</button>
+					   </div>`
+							: "";
 
 				return `<tr class="${rowClass}">
 				   <td class="${statusClass}">${statusText}${actionButtons}</td>
