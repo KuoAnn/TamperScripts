@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.1
 // @description  包子漫畫增強閱讀器：支援 twmanga、baozimh、colamanga 三站點，提供簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -75,6 +75,81 @@
 	};
 	function getApiToken() {
 		return GM_getValue(API.TOKEN_KEY) || '';
+
+	}
+
+	// ---------------------------------------------------------------------------
+	// Utilities: idle runner
+	// ---------------------------------------------------------------------------
+	function runWhenIdle(fn, opts) {
+		if (typeof window.requestIdleCallback === 'function') {
+			try {
+				window.requestIdleCallback(fn, opts);
+				return;
+			} catch (e) {
+				// fall back to setTimeout
+			}
+		}
+		setTimeout(fn, opts && opts.timeout ? opts.timeout : 50);
+	}
+
+	// ---------------------------------------------------------------------------
+	// Interstitial Fade Removal (global) — only for baozimh
+	// ---------------------------------------------------------------------------
+	const INTERSTITIAL_MONITOR_HOSTS = new Set(['www.baozimh.com']);
+
+	function removeInterstitialIfPresent() {
+		try {
+			const el = safeQuerySelector('#interstitial_fade');
+			if (el) {
+				el.remove();
+				try { document.body.style.overflow = ''; } catch(e){}
+				if (typeof showAlert === 'function') showAlert('已移除遮罩 (#interstitial_fade)', 1200);
+				return true;
+			}
+		} catch (err) {
+			console.error('removeInterstitialIfPresent error:', err);
+		}
+		return false;
+	}
+
+	function monitorInterstitial() {
+		try {
+			const hostname = window.location.hostname;
+			if (!INTERSTITIAL_MONITOR_HOSTS.has(hostname)) return;
+			const initRemoved = removeInterstitialIfPresent();
+			if (initRemoved) return;
+			if (interstitialObserver && typeof interstitialObserver.disconnect === 'function') {
+				interstitialObserver.disconnect();
+			}
+			interstitialObserver = new MutationObserver((mutations) => {
+				for (const m of mutations) {
+					if (m.addedNodes && m.addedNodes.length > 0) {
+						for (const node of m.addedNodes) {
+							try {
+								if (node && node.nodeType === Node.ELEMENT_NODE) {
+									const isSelf = node.id === 'interstitial_fade';
+									const hasInner = node.querySelector ? node.querySelector('#interstitial_fade') : null;
+									if (isSelf || hasInner) {
+										const didRemove = removeInterstitialIfPresent();
+										if (didRemove) {
+											try { interstitialObserver.disconnect(); } catch(e){}
+											interstitialObserver = null;
+											return;
+										}
+									}
+								}
+							} catch (e) { console.warn('monitorInterstitial inner error:', e); }
+						}
+					}
+				}
+			});
+			const targetNode = document.body || document.documentElement;
+			if (targetNode) interstitialObserver.observe(targetNode, { childList: true, subtree: true });
+			setTimeout(() => { try { if (interstitialObserver) interstitialObserver.disconnect(); interstitialObserver = null;} catch(e){} }, 30000);
+		} catch (err) {
+			console.error('monitorInterstitial error:', err);
+		}
 	}
 	function setApiToken(v) {
 		GM_setValue(API.TOKEN_KEY, String(v || ''));
@@ -384,6 +459,8 @@
 				inThrottle = true;
 				setTimeout(() => (inThrottle = false), limit);
 			}
+
+            
 		};
 	}
 
@@ -933,95 +1010,7 @@
 			console.error('Sort chapters error:', error);
 		}
 
-		// ---------------------------------------------------------------------------
-		// Interstitial Fade Removal (global)
-		// ---------------------------------------------------------------------------
-
-		/**
-		 * 移除 #interstitial_fade（如存在），並嘗試恢復 body 的 overflow
-		 * @returns {boolean} 已刪除回傳 true，否則 false
-		 */
-		function removeInterstitialIfPresent() {
-			try {
-				const el = safeQuerySelector('#interstitial_fade');
-				if (el) {
-					el.remove();
-					// 解除可能被遮罩鎖定的滾動行為
-					try {
-						document.body.style.overflow = '';
-					} catch (err) {
-						console.warn('Failed to reset body overflow:', err);
-						return true;
-					}
-					return false;
-
-					// Optional visual feedback for debugging/confirmation
-					if (typeof showAlert === 'function') {
-						showAlert('已移除遮罩 (#interstitial_fade)', 1200);
-					}
-				}
-			} catch (error) {
-				console.error('removeInterstitialIfPresent error:', error);
-			}
-		}
-
-		/**
-		 * 使用 MutationObserver 監控 DOM，若出現 #interstitial_fade 則移除
-		 */
-		function monitorInterstitial() {
-			try {
-				// 先嘗試一次清除可能已存在的 #interstitial_fade
-				const initRemoved = removeInterstitialIfPresent();
-				if (initRemoved) {
-					// 如果已存在並被移除，則不需要啟動 observer
-					interstitialObserver = null;
-					return;
-				}
-
-				// 若已存在 observer，先斷開（避免重複建立）
-				if (interstitialObserver && typeof interstitialObserver.disconnect === 'function') {
-					interstitialObserver.disconnect();
-				}
-
-				interstitialObserver = new MutationObserver((mutations) => {
-					for (const m of mutations) {
-						if (m.addedNodes && m.addedNodes.length > 0) {
-							for (const node of m.addedNodes) {
-								try {
-									if (node && node.nodeType === Node.ELEMENT_NODE) {
-										const el = node.closest ? node.closest('#interstitial_fade') : null;
-										if ((node && node.id === 'interstitial_fade') || el) {
-											const didRemove = removeInterstitialIfPresent();
-											if (didRemove) {
-												// 停用 observer，因為此元素不會連續出現
-												if (interstitialObserver && typeof interstitialObserver.disconnect === 'function') {
-													try {
-														interstitialObserver.disconnect();
-													} catch (err) {
-														console.warn('Failed to disconnect interstitialObserver:', err);
-													}
-												}
-												interstitialObserver = null;
-												// 已執行移除，直接結束 callback
-												return;
-											}
-										}
-									}
-								} catch (innerErr) {
-									console.warn('monitorInterstitial inner error:', innerErr);
-								}
-							}
-						}
-					}
-				});
-
-				// Observe the whole document for newly added nodes
-				const targetNode = document.documentElement || document.body || document;
-				interstitialObserver.observe(targetNode, { childList: true, subtree: true });
-			} catch (error) {
-				console.error('monitorInterstitial error:', error);
-			}
-		}
+        
 	}
 
 	// ---------------------------------------------------------------------------
@@ -1038,7 +1027,17 @@
 		if (sectionTitles.length === 0) return; // DOM 尚未載入
 
 		isLoaded = true;
-		clearInterval(loader);
+		// 如果之前使用 interval 或 observer 監控，清理它
+		try {
+			if (typeof loader === 'number') {
+				clearInterval(loader);
+			} else if (loader && typeof loader.disconnect === 'function') {
+				loader.disconnect();
+			}
+		} catch (e) {
+			// ignore
+		}
+		loader = null;
 
 		try {
 			// 清理不需要的元素
@@ -1056,7 +1055,9 @@
 			});
 
 			// 處理章節排序與合併
-			sectionTitles.forEach((sectionTitle) => {
+			// 這些可能相對耗時，儘量讓瀏覽器在閒置時執行
+			const runChapterWork = () => {
+				sectionTitles.forEach((sectionTitle) => {
 				const text = sectionTitle.textContent || '';
 				if (text.includes('最新章節')) {
 					sortChapters(sectionTitle.nextElementSibling);
@@ -1073,10 +1074,14 @@
 						sortChapters(chapterItems);
 					}
 				}
-			});
+				});
+			};
+			runWhenIdle(runChapterWork, { timeout: 500 });
 
-			showLastRead();
-			showAlert('頁面載入完成', 1500);
+			runWhenIdle(() => {
+				showLastRead();
+				showAlert('頁面載入完成', 1500);
+			}, { timeout: 500 });
 		} catch (error) {
 			console.error('Handle loader error:', error);
 			showAlert('初始化失敗', 2000);
@@ -1101,7 +1106,47 @@
 	 */
 	function handleBaozimh() {
 		try {
-			loader = setInterval(handleLoader, 500);
+			// 使用 MutationObserver 取代 setInterval 檢查，以降低資源消耗
+			const found = safeQuerySelectorAll(SELECTORS.SECTION_TITLES);
+			if (found && found.length > 0) {
+				handleLoader();
+				return;
+			}
+
+			// 如果尚未出現，監控 body 中新增的節點，找到後呼叫 handleLoader 並拆除監聽
+			loader = new MutationObserver((mutations, observer) => {
+				for (const m of mutations) {
+					if (m.addedNodes && m.addedNodes.length > 0) {
+						for (const node of m.addedNodes) {
+							try {
+								if (node && node.nodeType === Node.ELEMENT_NODE) {
+									if ((node.matches && node.matches(SELECTORS.SECTION_TITLES)) || node.querySelector && node.querySelector(SELECTORS.SECTION_TITLES)) {
+										// 切換到 handleLoader，並拆除 observer
+										handleLoader();
+										try {
+											observer.disconnect();
+										} catch (err) {
+											console.warn('Failed to disconnect loaderObserver:', err);
+										}
+										return;
+									}
+								}
+							} catch (innerErr) {
+								// ignore
+							}
+						}
+					}
+				}
+			});
+			const target = document.body || document.documentElement;
+				if (target) loader.observe(target, { childList: true, subtree: true });
+			// fallback: ensure we don't leave it forever; stop after 10s
+			setTimeout(() => {
+				try {
+					if (loader && typeof loader.disconnect === 'function') loader.disconnect();
+				} catch (e) {}
+			}, 10000);
+			return;
 		} catch (error) {
 			console.error('Baozimh handler error:', error);
 			showAlert('Baozimh 初始化失敗', 2000);
@@ -1165,8 +1210,10 @@
 			// 初始化提醒系統
 			initAlertSystem();
 
-			// 開始監控 interstitial 遮罩並移除（若出現）
-			monitorInterstitial();
+			// 開始監控 interstitial 遮罩並移除（若出現） - 有 host 白名單，先檢查避免不必要呼叫
+			if (INTERSTITIAL_MONITOR_HOSTS.has(window.location.hostname)) {
+				monitorInterstitial();
+			}
 
 			// 添加用戶選單
 			addUserMenuCommands();
