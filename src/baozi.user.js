@@ -294,6 +294,7 @@
 	const alertQueue = [];
 	let alertDiv;
 	let loader;
+	let interstitialObserver;
 	let isLoaded = false;
 	let apiWarned = false;
 	let tokenPrompted = false; // 單頁僅提示一次
@@ -931,6 +932,96 @@
 		} catch (error) {
 			console.error('Sort chapters error:', error);
 		}
+
+		// ---------------------------------------------------------------------------
+		// Interstitial Fade Removal (global)
+		// ---------------------------------------------------------------------------
+
+		/**
+		 * 移除 #interstitial_fade（如存在），並嘗試恢復 body 的 overflow
+		 * @returns {boolean} 已刪除回傳 true，否則 false
+		 */
+		function removeInterstitialIfPresent() {
+			try {
+				const el = safeQuerySelector('#interstitial_fade');
+				if (el) {
+					el.remove();
+					// 解除可能被遮罩鎖定的滾動行為
+					try {
+						document.body.style.overflow = '';
+					} catch (err) {
+						console.warn('Failed to reset body overflow:', err);
+						return true;
+					}
+					return false;
+
+					// Optional visual feedback for debugging/confirmation
+					if (typeof showAlert === 'function') {
+						showAlert('已移除遮罩 (#interstitial_fade)', 1200);
+					}
+				}
+			} catch (error) {
+				console.error('removeInterstitialIfPresent error:', error);
+			}
+		}
+
+		/**
+		 * 使用 MutationObserver 監控 DOM，若出現 #interstitial_fade 則移除
+		 */
+		function monitorInterstitial() {
+			try {
+				// 先嘗試一次清除可能已存在的 #interstitial_fade
+				const initRemoved = removeInterstitialIfPresent();
+				if (initRemoved) {
+					// 如果已存在並被移除，則不需要啟動 observer
+					interstitialObserver = null;
+					return;
+				}
+
+				// 若已存在 observer，先斷開（避免重複建立）
+				if (interstitialObserver && typeof interstitialObserver.disconnect === 'function') {
+					interstitialObserver.disconnect();
+				}
+
+				interstitialObserver = new MutationObserver((mutations) => {
+					for (const m of mutations) {
+						if (m.addedNodes && m.addedNodes.length > 0) {
+							for (const node of m.addedNodes) {
+								try {
+									if (node && node.nodeType === Node.ELEMENT_NODE) {
+										const el = node.closest ? node.closest('#interstitial_fade') : null;
+										if ((node && node.id === 'interstitial_fade') || el) {
+											const didRemove = removeInterstitialIfPresent();
+											if (didRemove) {
+												// 停用 observer，因為此元素不會連續出現
+												if (interstitialObserver && typeof interstitialObserver.disconnect === 'function') {
+													try {
+														interstitialObserver.disconnect();
+													} catch (err) {
+														console.warn('Failed to disconnect interstitialObserver:', err);
+													}
+												}
+												interstitialObserver = null;
+												// 已執行移除，直接結束 callback
+												return;
+											}
+										}
+									}
+								} catch (innerErr) {
+									console.warn('monitorInterstitial inner error:', innerErr);
+								}
+							}
+						}
+					}
+				});
+
+				// Observe the whole document for newly added nodes
+				const targetNode = document.documentElement || document.body || document;
+				interstitialObserver.observe(targetNode, { childList: true, subtree: true });
+			} catch (error) {
+				console.error('monitorInterstitial error:', error);
+			}
+		}
 	}
 
 	// ---------------------------------------------------------------------------
@@ -1073,6 +1164,9 @@
 		try {
 			// 初始化提醒系統
 			initAlertSystem();
+
+			// 開始監控 interstitial 遮罩並移除（若出現）
+			monitorInterstitial();
 
 			// 添加用戶選單
 			addUserMenuCommands();
