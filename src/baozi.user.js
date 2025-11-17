@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.4.2
+// @version      1.4.3
 // @description  包子漫畫增強閱讀器：支援 twmanga、baozimh、colamanga 三站點，提供簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
@@ -97,53 +97,34 @@
 	// ---------------------------------------------------------------------------
 	const INTERSTITIAL_MONITOR_HOSTS = new Set(["www.baozimh.com"]);
 
-	function removeInterstitialIfPresent() {
+	function removeElementIfPresent(selector) {
 		try {
-			const el = safeQuerySelector("#interstitial_fade");
+			const el = safeQuerySelector(selector);
 			if (el) {
 				el.remove();
-				try {
-					document.body.style.overflow = "";
-				} catch (e) {}
-				if (typeof showAlert === "function") showAlert("已移除遮罩 (#interstitial_fade)", 1200);
 				return true;
 			}
-
-			/**
-			 * 通用的 selector 移除 helper
-			 * @param {string} selector
-			 * @returns {boolean} 如果成功移除元素回傳 true
-			 */
-			function removeSelectorIfPresent(selector) {
-				try {
-					const el = safeQuerySelector(selector);
-					if (el) {
-						el.remove();
-						return true;
-					}
-				} catch (err) {
-					console.error("removeSelectorIfPresent error for", selector, err);
-				}
-				return false;
-			}
-
-			function removeBaoziAdPopupIfPresent() {
-				// 不特別處理 overflow
-				return removeSelectorIfPresent("#baoziAdPopup");
-			}
 		} catch (err) {
-			console.error("removeInterstitialIfPresent error:", err);
+			console.error("removeElementIfPresent error for", selector, err);
 		}
 		return false;
 	}
+
 
 	function monitorInterstitial() {
 		try {
 			const hostname = window.location.hostname;
 			if (!INTERSTITIAL_MONITOR_HOSTS.has(hostname)) return;
-			const initRemovedInter = removeInterstitialIfPresent();
-			const initRemovedAd = removeBaoziAdPopupIfPresent();
-			if (initRemovedInter || initRemovedAd) return;
+			const didRemoveInterstitial = removeElementIfPresent("#interstitial_fade");
+			if (didRemoveInterstitial) {
+				try { document.body.style.overflow = ""; } catch (e) {}
+				if (typeof showAlert === "function") showAlert("已移除遮罩 (#interstitial_fade)", 1200);
+			}
+			removeElementIfPresent("#baoziAdPopup");
+			// 若頁面初始已移除，僅在還有任一元素存在時建立 observer
+			const stillInterInitial = !!safeQuerySelector("#interstitial_fade");
+			const stillAdInitial = !!safeQuerySelector("#baoziAdPopup");
+			if (!stillInterInitial && !stillAdInitial) return;
 			if (interstitialObserver && typeof interstitialObserver.disconnect === "function") {
 				interstitialObserver.disconnect();
 			}
@@ -157,19 +138,32 @@
 									const hasInterstitialInner = node.querySelector ? node.querySelector("#interstitial_fade") : null;
 									const isBaoziAdSelf = node.id === "baoziAdPopup";
 									const hasBaoziAdInner = node.querySelector ? node.querySelector("#baoziAdPopup") : null;
+									// 嘗試移除兩個元素（若出現）；只有在兩者都不存在時才斷線
+									let removedAny = false;
 									if (isInterstitialSelf || hasInterstitialInner) {
-										const didRemove = removeInterstitialIfPresent();
-										if (didRemove) {
-											try {
-												interstitialObserver.disconnect();
-											} catch (e) {}
-											interstitialObserver = null;
-											return;
+										try {
+											const didRemove = removeElementIfPresent("#interstitial_fade");
+											if (didRemove) {
+												try { document.body.style.overflow = ""; } catch (e) {}
+												if (typeof showAlert === "function") showAlert("已移除遮罩 (#interstitial_fade)", 1200);
+											}
+											removedAny = removedAny || !!didRemove;
+										} catch (e) {
+											console.warn("interstitial remove error", e);
 										}
 									}
 									if (isBaoziAdSelf || hasBaoziAdInner) {
-										const didRemoveAd = removeBaoziAdPopupIfPresent();
-										if (didRemoveAd) {
+										try {
+											const didRemoveAd = removeElementIfPresent("#baoziAdPopup");
+											removedAny = removedAny || !!didRemoveAd;
+										} catch (e) {
+											console.warn("baozi ad remove error", e);
+										}
+									}
+									if (removedAny) {
+										const stillInter = !!safeQuerySelector("#interstitial_fade");
+										const stillAd = !!safeQuerySelector("#baoziAdPopup");
+										if (!stillInter && !stillAd) {
 											try {
 												interstitialObserver.disconnect();
 											} catch (e) {}
@@ -581,9 +575,15 @@
 		try {
 			alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
 		} catch (error) {
-			console.error("Failed to initialize alert system:", error);
-			if (typeof showAlert === "function") {
-				showAlert("提醒系統初始化失敗: " + (error && error.message ? error.message : error), 2500);
+			try {
+				alertDiv = document.createElement("div");
+				alertDiv.className = "alertContainer";
+				document.body.appendChild(alertDiv);
+			} catch (err) {
+				console.error("Failed to initialize alert system:", error, err);
+				if (typeof showAlert === "function") {
+					showAlert("提醒系統初始化失敗: " + (error && error.message ? error.message : error), 2500);
+				}
 			}
 		}
 	}
@@ -772,32 +772,17 @@
 	 * 取得 Colamanga 下一頁 URL
 	 * 格式: /manga-xxx/1/414.html -> /manga-xxx/1/415.html
 	 */
-	function getColamangaNextPage() {
-		const url = window.location.pathname;
-		const match = url.match(/^(.+\/)(\d+)(\.html)$/);
-		if (match) {
-			const [, basePath, pageNum, extension] = match;
-			const nextPage = parseInt(pageNum, 10) + 1;
-			return `${basePath}${nextPage}${extension}`;
-		}
-		return null;
-	}
-
 	/**
-	 * 取得 Colamanga 上一頁 URL
-	 * 格式: /manga-xxx/1/414.html -> /manga-xxx/1/413.html
+	 * 取得 Colamanga 相鄰頁面 URL
+	 * @param {number} offset - +1 下一頁, -1 上一頁
 	 */
-	function getColamangaPrevPage() {
+	function getColamangaAdjacentPage(offset = 1) {
 		const url = window.location.pathname;
 		const match = url.match(/^(.+\/)(\d+)(\.html)$/);
-		if (match) {
-			const [, basePath, pageNum, extension] = match;
-			const prevPage = parseInt(pageNum, 10) - 1;
-			if (prevPage >= 0) {
-				return `${basePath}${prevPage}${extension}`;
-			}
-		}
-		return null;
+		if (!match) return null;
+		const [, basePath, pageNum, extension] = match;
+		const target = parseInt(pageNum, 10) + offset;
+		return target >= 0 ? `${basePath}${target}${extension}` : null;
 	}
 
 	/**
@@ -808,7 +793,7 @@
 
 		// Colamanga 使用 URL 跳轉方式
 		if (hostname === "www.colamanga.com") {
-			const nextUrl = getColamangaNextPage();
+			const nextUrl = getColamangaAdjacentPage(1);
 			if (nextUrl) {
 				window.location.href = nextUrl;
 			} else {
@@ -818,12 +803,7 @@
 		}
 
 		// 其他站點使用按鈕點擊方式
-		const nextBtn = safeQuerySelector(SELECTORS.NEXT_CHAPTER);
-		if (nextBtn) {
-			nextBtn.click();
-		} else {
-			showAlert("已是最後一章", 1500);
-		}
+		clickButton(SELECTORS.NEXT_CHAPTER, "已是最後一章");
 	}
 
 	/**
@@ -834,7 +814,7 @@
 
 		// Colamanga 使用 URL 跳轉方式
 		if (hostname === "www.colamanga.com") {
-			const prevUrl = getColamangaPrevPage();
+			const prevUrl = getColamangaAdjacentPage(-1);
 			if (prevUrl) {
 				window.location.href = prevUrl;
 			} else {
@@ -844,11 +824,15 @@
 		}
 
 		// 其他站點使用按鈕點擊方式
-		const prevBtn = safeQuerySelector(SELECTORS.PREV_CHAPTER);
-		if (prevBtn) {
-			prevBtn.click();
+		clickButton(SELECTORS.PREV_CHAPTER, "已是第一章");
+	}
+
+	function clickButton(selector, msg) {
+		const btn = safeQuerySelector(selector);
+		if (btn) {
+			btn.click();
 		} else {
-			showAlert("已是第一章", 1500);
+			showAlert(msg, 1500);
 		}
 	}
 
