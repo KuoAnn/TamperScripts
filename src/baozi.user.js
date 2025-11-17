@@ -72,7 +72,7 @@
 				// fall back to setTimeout
 			}
 		}
-		setTimeout(fn, opts && opts.timeout ? opts.timeout : 50);
+		setTimeout(fn, opts?.timeout ?? 50);
 	}
 
 	// ---------------------------------------------------------------------------
@@ -87,24 +87,22 @@
 
 	function removeElementIfPresent(selector) {
 		try {
-			const elements = Array.from(safeQuerySelectorAll(selector));
+			const elements = safeQuerySelectorAll(selector);
 			let removedCount = 0;
-			elements.forEach((el) => {
+			for (const el of elements) {
 				try {
 					el.remove();
+					removedCount++;
 				} catch (e) {
-					/* ignore single remove errors */
+					// ignore remove errors for single elements
 				}
-				removedCount++;
-			});
-			if (removedCount > 0) {
-				console.log(`[Baozi] 已移除 ${removedCount} 個元素，選擇器: ${selector}`);
 			}
+			if (removedCount > 0) console.log(`[Baozi] 已移除 ${removedCount} 個元素，選擇器: ${selector}`);
 			return removedCount;
 		} catch (err) {
 			console.error("removeElementIfPresent error for", selector, err);
+			return 0;
 		}
-		return 0;
 	}
 
 	function removeInterstitialTargets(notify = false) {
@@ -662,10 +660,10 @@
 			// 1) 先用本地快取立即標示
 			const localList = getLocalReads(key);
 			if (localList.length > 0) {
-				localList.forEach((value) => {
+				for (const value of localList) {
 					const links = safeQuerySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
-					links.forEach((ele) => ele.classList.add("read-chapter"));
-				});
+					for (const ele of links) ele.classList.add("read-chapter");
+				}
 				showAlert(`(本機) 已標示 ${localList.length} 個已讀章節`, 1200);
 			}
 
@@ -681,11 +679,11 @@
 					const unioned = intersectAndSync(key, remoteList);
 					// 先清掉舊標記再標示聯集（避免顯示超出聯集的本地項）
 					const readChapters = safeQuerySelectorAll(".read-chapter");
-					readChapters.forEach((chapter) => chapter.classList.remove("read-chapter"));
-					unioned.forEach((value) => {
+					for (const chapter of readChapters) chapter.classList.remove("read-chapter");
+					for (const value of unioned) {
 						const links = safeQuerySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
-						links.forEach((ele) => ele.classList.add("read-chapter"));
-					});
+						for (const ele of links) ele.classList.add("read-chapter");
+					}
 					showAlert(`(同步) 已標示 ${unioned.length} 個已讀章節\n[${unioned.map((x) => x.ss + "-" + x.cs).join(", ")}]`, 2500);
 				})
 				.catch((error) => {
@@ -724,7 +722,7 @@
 				setLocalReads(key, []);
 				// UI 清除
 				const readChapters = safeQuerySelectorAll(".read-chapter");
-				readChapters.forEach((chapter) => chapter.classList.remove("read-chapter"));
+				for (const chapter of readChapters) chapter.classList.remove("read-chapter");
 				showAlert("已清除閱讀紀錄");
 				// 再清雲端
 				apiClear(key).catch((error) => {
@@ -763,51 +761,34 @@
 	 * 點擊下一章
 	 */
 	function clickNext() {
-		const hostname = window.location.hostname;
-
-		// Colamanga 使用 URL 跳轉方式
-		if (hostname === "www.colamanga.com") {
-			const nextUrl = getColamangaAdjacentPage(1);
-			if (nextUrl) {
-				window.location.href = nextUrl;
-			} else {
-				showAlert("已是最後一頁", 1500);
-			}
-			return;
-		}
-
-		// 其他站點使用按鈕點擊方式
-		clickButton(SELECTORS.NEXT_CHAPTER, "已是最後一章");
+		navigate(1, "已是最後一章", "已是最後一頁");
 	}
 
 	/**
 	 * 點擊上一章
 	 */
 	function clickPrev() {
-		const hostname = window.location.hostname;
+		navigate(-1, "已是第一章", "已是第一頁");
+	}
 
-		// Colamanga 使用 URL 跳轉方式
+	function navigate(offset, msgNoBtn, msgNoPage) {
+		const hostname = window.location.hostname;
 		if (hostname === "www.colamanga.com") {
-			const prevUrl = getColamangaAdjacentPage(-1);
-			if (prevUrl) {
-				window.location.href = prevUrl;
+			const adjacentUrl = getColamangaAdjacentPage(offset);
+			if (adjacentUrl) {
+				window.location.href = adjacentUrl;
 			} else {
-				showAlert("已是第一頁", 1500);
+				showAlert(msgNoPage, 1500);
 			}
 			return;
 		}
-
-		// 其他站點使用按鈕點擊方式
-		clickButton(SELECTORS.PREV_CHAPTER, "已是第一章");
+		clickButton(offset > 0 ? SELECTORS.NEXT_CHAPTER : SELECTORS.PREV_CHAPTER, msgNoBtn);
 	}
 
 	function clickButton(selector, msg) {
 		const btn = safeQuerySelector(selector);
-		if (btn) {
-			btn.click();
-		} else {
-			showAlert(msg, 1500);
-		}
+		if (btn) btn.click();
+		else showAlert(msg, 1500);
 	}
 
 	/**
@@ -893,40 +874,36 @@
 			return;
 		}
 
-		switch (event.key) {
+		const key = String(event.key || "").toLowerCase();
+		switch (key) {
 			case "w":
-			case "W":
-			case "PageUp":
+			case "pageup":
 				event.preventDefault();
 				smoothScroll(-window.innerHeight * CONFIG.SCROLL_PERCENTAGE);
 				autoPrevPage();
 				break;
 
 			case "s":
-			case "S":
 			case " ":
-			case "PageDown":
+			case "pagedown":
 				event.preventDefault();
 				smoothScroll(window.innerHeight * CONFIG.SCROLL_PERCENTAGE);
 				autoNextPage();
 				break;
 
 			case "a":
-			case "A":
-			case "ArrowLeft":
+			case "arrowleft":
 				event.preventDefault();
 				clickPrev();
 				break;
 
 			case "d":
-			case "D":
-			case "ArrowRight":
+			case "arrowright":
 				event.preventDefault();
 				clickNext();
 				break;
 
 			case "f":
-			case "F":
 				event.preventDefault();
 				toggleFullscreen();
 				break;
@@ -974,15 +951,13 @@
 	 */
 	function removeElements(selector, textFilter = null) {
 		const elements = safeQuerySelectorAll(selector);
-		elements.forEach((element) => {
+		for (const element of elements) {
 			try {
-				if (!textFilter || (element.textContent && element.textContent.includes(textFilter))) {
-					element.remove();
-				}
+				if (!textFilter || (element.textContent && element.textContent.includes(textFilter))) element.remove();
 			} catch (error) {
 				console.warn("Remove element error:", error);
 			}
-		});
+		}
 	}
 
 	/**
@@ -1048,33 +1023,28 @@
 
 			// 展開「查看全部」按鈕
 			const viewAllButtons = safeQuerySelectorAll("button");
-			viewAllButtons.forEach((btn) => {
-				if (btn.textContent?.includes("查看全部")) {
-					btn.click();
-				}
-			});
+			for (const btn of viewAllButtons) {
+				if (btn.textContent?.includes("查看全部")) btn.click();
+			}
 
 			// 處理章節排序與合併
 			// 這些可能相對耗時，儘量讓瀏覽器在閒置時執行
 			const runChapterWork = () => {
-				sectionTitles.forEach((sectionTitle) => {
+				for (const sectionTitle of sectionTitles) {
 					const text = sectionTitle.textContent || "";
-					if (text.includes("最新章節")) {
-						sortChapters(sectionTitle.nextElementSibling);
-					} else if (text.includes("章節目錄")) {
+					if (text.includes("最新章節")) sortChapters(sectionTitle.nextElementSibling);
+					else if (text.includes("章節目錄")) {
 						const chapterItems = safeQuerySelector(SELECTORS.CHAPTER_ITEMS);
 						const chaptersOther = safeQuerySelector(SELECTORS.CHAPTERS_OTHER);
 
 						if (chapterItems && chaptersOther) {
 							const otherChapters = chaptersOther.querySelectorAll(":scope > div");
-							otherChapters.forEach((chapter) => chapterItems.appendChild(chapter));
+							for (const chapter of otherChapters) chapterItems.appendChild(chapter);
 						}
 
-						if (chapterItems) {
-							sortChapters(chapterItems);
-						}
+						if (chapterItems) sortChapters(chapterItems);
 					}
-				});
+				}
 			};
 			runWhenIdle(runChapterWork, { timeout: 500 });
 
