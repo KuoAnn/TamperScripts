@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.4.3
-// @description  包子漫畫增強閱讀器：支援 twmanga、baozimh、colamanga 三站點，提供簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
+// @version      1.4.4
+// @description  漫畫增強閱讀器：支援 twmanga、baozimh、colamanga 三站點，提供簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
 // @match        https://www.baozimh.com/comic/*
@@ -20,23 +20,6 @@
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
 // ==/UserScript==
-
-/**
- * Baozi Comic Reader - 包子漫畫增強閱讀器
- * 提供簡化介面、閱讀紀錄管理、快捷操作等功能
- *
- * 支援站點：
- * - twmanga.com: 完整功能（閱讀紀錄、快捷操作、自動翻頁）
- * - baozimh.com: 完整功能（介面清理、閱讀紀錄、章節排序）
- * - colamanga.com: 快捷操作與翻頁功能
- *
- * 功能特色：
- * - 智能閱讀進度管理（twmanga、baozimh）
- * - 多種快捷鍵操作 (W/S 滾動, A/D 翻章, F 全螢幕)
- * - 自動翻頁與滑輪支援
- * - 移動裝置觸控操作
- * - 介面清理與章節排序（baozimh）
- */
 
 (function () {
 	"use strict";
@@ -93,100 +76,91 @@
 	}
 
 	// ---------------------------------------------------------------------------
-	// Interstitial Fade Removal (global) — only for baozimh
+	// Interstitial Fade Removal (global) — only for twmanga
 	// ---------------------------------------------------------------------------
-	const INTERSTITIAL_MONITOR_HOSTS = new Set(["www.baozimh.com"]);
+	const INTERSTITIAL_MONITOR_HOSTS = new Set(["www.twmanga.com"]);
+	const INTERSTITIAL_TARGETS = [
+		{ selector: "#interstitial_fade", message: "已移除遮罩 (#interstitial_fade)", resetOverflow: true },
+		{ selector: "#baoziAdPopup", message: "已移除廣告 (#baoziAdPopup)" },
+	];
+	const INTERSTITIAL_POLL_INTERVAL = 2000;
 
 	function removeElementIfPresent(selector) {
 		try {
-			const el = safeQuerySelector(selector);
-			if (el) {
-				el.remove();
-				return true;
+			const elements = Array.from(safeQuerySelectorAll(selector));
+			let removedCount = 0;
+			elements.forEach((el) => {
+				try {
+					el.remove();
+				} catch (e) {
+					/* ignore single remove errors */
+				}
+				removedCount++;
+			});
+			if (removedCount > 0) {
+				console.log(`[Baozi] 已移除 ${removedCount} 個元素，選擇器: ${selector}`);
 			}
+			return removedCount;
 		} catch (err) {
 			console.error("removeElementIfPresent error for", selector, err);
 		}
-		return false;
+		return 0;
 	}
 
+	function removeInterstitialTargets(notify = false) {
+		let removedAny = false;
+		for (const target of INTERSTITIAL_TARGETS) {
+			const removed = removeElementIfPresent(target.selector);
+			if (removed) {
+				removedAny = true;
+				if (target.resetOverflow) {
+					try {
+						document.body.style.overflow = "";
+					} catch (e) {}
+				}
+				if (notify && typeof showAlert === "function") {
+					showAlert(target.message, 1200);
+				}
+				// 也印出 console 紀錄方便追蹤
+				console.log(
+					`[Baozi] removeInterstitialTargets: selector=${target.selector}, removedCount=${removed}, host=${window.location.hostname}`
+				);
+			}
+		}
+		return removedAny;
+	}
+
+	function cleanupInterstitialMonitoring() {
+		if (interstitialObserver && typeof interstitialObserver.disconnect === "function") {
+			interstitialObserver.disconnect();
+			interstitialObserver = null;
+		}
+		if (interstitialInterval) {
+			clearInterval(interstitialInterval);
+			interstitialInterval = null;
+		}
+	}
 
 	function monitorInterstitial() {
 		try {
 			const hostname = window.location.hostname;
 			if (!INTERSTITIAL_MONITOR_HOSTS.has(hostname)) return;
-			const didRemoveInterstitial = removeElementIfPresent("#interstitial_fade");
-			if (didRemoveInterstitial) {
-				try { document.body.style.overflow = ""; } catch (e) {}
-				if (typeof showAlert === "function") showAlert("已移除遮罩 (#interstitial_fade)", 1200);
-			}
-			removeElementIfPresent("#baoziAdPopup");
-			// 若頁面初始已移除，僅在還有任一元素存在時建立 observer
-			const stillInterInitial = !!safeQuerySelector("#interstitial_fade");
-			const stillAdInitial = !!safeQuerySelector("#baoziAdPopup");
-			if (!stillInterInitial && !stillAdInitial) return;
-			if (interstitialObserver && typeof interstitialObserver.disconnect === "function") {
-				interstitialObserver.disconnect();
-			}
-			interstitialObserver = new MutationObserver((mutations) => {
-				for (const m of mutations) {
-					if (m.addedNodes && m.addedNodes.length > 0) {
-						for (const node of m.addedNodes) {
-							try {
-								if (node && node.nodeType === Node.ELEMENT_NODE) {
-									const isInterstitialSelf = node.id === "interstitial_fade";
-									const hasInterstitialInner = node.querySelector ? node.querySelector("#interstitial_fade") : null;
-									const isBaoziAdSelf = node.id === "baoziAdPopup";
-									const hasBaoziAdInner = node.querySelector ? node.querySelector("#baoziAdPopup") : null;
-									// 嘗試移除兩個元素（若出現）；只有在兩者都不存在時才斷線
-									let removedAny = false;
-									if (isInterstitialSelf || hasInterstitialInner) {
-										try {
-											const didRemove = removeElementIfPresent("#interstitial_fade");
-											if (didRemove) {
-												try { document.body.style.overflow = ""; } catch (e) {}
-												if (typeof showAlert === "function") showAlert("已移除遮罩 (#interstitial_fade)", 1200);
-											}
-											removedAny = removedAny || !!didRemove;
-										} catch (e) {
-											console.warn("interstitial remove error", e);
-										}
-									}
-									if (isBaoziAdSelf || hasBaoziAdInner) {
-										try {
-											const didRemoveAd = removeElementIfPresent("#baoziAdPopup");
-											removedAny = removedAny || !!didRemoveAd;
-										} catch (e) {
-											console.warn("baozi ad remove error", e);
-										}
-									}
-									if (removedAny) {
-										const stillInter = !!safeQuerySelector("#interstitial_fade");
-										const stillAd = !!safeQuerySelector("#baoziAdPopup");
-										if (!stillInter && !stillAd) {
-											try {
-												interstitialObserver.disconnect();
-											} catch (e) {}
-											interstitialObserver = null;
-											return;
-										}
-									}
-								}
-							} catch (e) {
-								console.warn("monitorInterstitial inner error:", e);
-							}
-						}
-					}
-				}
+
+			cleanupInterstitialMonitoring();
+			removeInterstitialTargets(true);
+
+			interstitialObserver = new MutationObserver(() => {
+				removeInterstitialTargets(false);
 			});
+
 			const targetNode = document.body || document.documentElement;
-			if (targetNode) interstitialObserver.observe(targetNode, { childList: true, subtree: true });
-			setTimeout(() => {
-				try {
-					if (interstitialObserver) interstitialObserver.disconnect();
-					interstitialObserver = null;
-				} catch (e) {}
-			}, 30000);
+			if (targetNode) {
+				interstitialObserver.observe(targetNode, { childList: true, subtree: true });
+			}
+
+			interstitialInterval = setInterval(() => {
+				removeInterstitialTargets(false);
+			}, INTERSTITIAL_POLL_INTERVAL);
 		} catch (err) {
 			console.error("monitorInterstitial error:", err);
 		}
@@ -410,8 +384,8 @@
 	let alertDiv;
 	let loader;
 	let interstitialObserver;
+	let interstitialInterval;
 	let isLoaded = false;
-	let apiWarned = false;
 	let tokenPrompted = false; // 單頁僅提示一次
 
 	// ---------------------------------------------------------------------------
