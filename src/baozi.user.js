@@ -39,7 +39,7 @@
  */
 
 (function () {
-	'use strict';
+	"use strict";
 
 	// ---------------------------------------------------------------------------
 	// Constants & Configuration
@@ -57,32 +57,31 @@
 	};
 
 	const SELECTORS = {
-		NEXT_CHAPTER: 'a#next-chapter',
-		PREV_CHAPTER: 'a#prev-chapter',
-		SECTION_TITLES: '.section-title',
-		CHAPTER_ITEMS: '#chapter-items',
-		CHAPTERS_OTHER: '#chapters_other_list',
-		ACTION_BUTTONS: '.action-buttons',
-		CLEAR_READ_BTN: '.clearReadBtn',
-		COMICS_TITLE: '.comics-detail__title',
+		NEXT_CHAPTER: "a#next-chapter",
+		PREV_CHAPTER: "a#prev-chapter",
+		SECTION_TITLES: ".section-title",
+		CHAPTER_ITEMS: "#chapter-items",
+		CHAPTERS_OTHER: "#chapters_other_list",
+		ACTION_BUTTONS: ".action-buttons",
+		CLEAR_READ_BTN: ".clearReadBtn",
+		COMICS_TITLE: ".comics-detail__title",
 	};
 
 	// 遠端 API 設定（Endpoint 固定，Token 仍可自訂）
 	const API = {
-		ENDPOINT: 'https://script.google.com/macros/s/AKfycbxhZtApgZcHy9cjr9NklUx1CHUj1xH_-lmbXne5hyjiCoChXORKT6f9c3DgJ1rj6rc9xA/exec',
-		TOKEN_KEY: 'baozi_api_token',
+		ENDPOINT: "https://script.google.com/macros/s/AKfycbxhZtApgZcHy9cjr9NklUx1CHUj1xH_-lmbXne5hyjiCoChXORKT6f9c3DgJ1rj6rc9xA/exec",
+		TOKEN_KEY: "baozi_api_token",
 		TIMEOUT: 10000,
 	};
 	function getApiToken() {
-		return GM_getValue(API.TOKEN_KEY) || '';
-
+		return GM_getValue(API.TOKEN_KEY) || "";
 	}
 
 	// ---------------------------------------------------------------------------
 	// Utilities: idle runner
 	// ---------------------------------------------------------------------------
 	function runWhenIdle(fn, opts) {
-		if (typeof window.requestIdleCallback === 'function') {
+		if (typeof window.requestIdleCallback === "function") {
 			try {
 				window.requestIdleCallback(fn, opts);
 				return;
@@ -96,19 +95,44 @@
 	// ---------------------------------------------------------------------------
 	// Interstitial Fade Removal (global) — only for baozimh
 	// ---------------------------------------------------------------------------
-	const INTERSTITIAL_MONITOR_HOSTS = new Set(['www.baozimh.com']);
+	const INTERSTITIAL_MONITOR_HOSTS = new Set(["www.baozimh.com"]);
 
 	function removeInterstitialIfPresent() {
 		try {
-			const el = safeQuerySelector('#interstitial_fade');
+			const el = safeQuerySelector("#interstitial_fade");
 			if (el) {
 				el.remove();
-				try { document.body.style.overflow = ''; } catch(e){}
-				if (typeof showAlert === 'function') showAlert('已移除遮罩 (#interstitial_fade)', 1200);
+				try {
+					document.body.style.overflow = "";
+				} catch (e) {}
+				if (typeof showAlert === "function") showAlert("已移除遮罩 (#interstitial_fade)", 1200);
 				return true;
 			}
+
+			/**
+			 * 通用的 selector 移除 helper
+			 * @param {string} selector
+			 * @returns {boolean} 如果成功移除元素回傳 true
+			 */
+			function removeSelectorIfPresent(selector) {
+				try {
+					const el = safeQuerySelector(selector);
+					if (el) {
+						el.remove();
+						return true;
+					}
+				} catch (err) {
+					console.error("removeSelectorIfPresent error for", selector, err);
+				}
+				return false;
+			}
+
+			function removeBaoziAdPopupIfPresent() {
+				// 不特別處理 overflow
+				return removeSelectorIfPresent("#baoziAdPopup");
+			}
 		} catch (err) {
-			console.error('removeInterstitialIfPresent error:', err);
+			console.error("removeInterstitialIfPresent error:", err);
 		}
 		return false;
 	}
@@ -117,9 +141,10 @@
 		try {
 			const hostname = window.location.hostname;
 			if (!INTERSTITIAL_MONITOR_HOSTS.has(hostname)) return;
-			const initRemoved = removeInterstitialIfPresent();
-			if (initRemoved) return;
-			if (interstitialObserver && typeof interstitialObserver.disconnect === 'function') {
+			const initRemovedInter = removeInterstitialIfPresent();
+			const initRemovedAd = removeBaoziAdPopupIfPresent();
+			if (initRemovedInter || initRemovedAd) return;
+			if (interstitialObserver && typeof interstitialObserver.disconnect === "function") {
 				interstitialObserver.disconnect();
 			}
 			interstitialObserver = new MutationObserver((mutations) => {
@@ -128,38 +153,59 @@
 						for (const node of m.addedNodes) {
 							try {
 								if (node && node.nodeType === Node.ELEMENT_NODE) {
-									const isSelf = node.id === 'interstitial_fade';
-									const hasInner = node.querySelector ? node.querySelector('#interstitial_fade') : null;
-									if (isSelf || hasInner) {
+									const isInterstitialSelf = node.id === "interstitial_fade";
+									const hasInterstitialInner = node.querySelector ? node.querySelector("#interstitial_fade") : null;
+									const isBaoziAdSelf = node.id === "baoziAdPopup";
+									const hasBaoziAdInner = node.querySelector ? node.querySelector("#baoziAdPopup") : null;
+									if (isInterstitialSelf || hasInterstitialInner) {
 										const didRemove = removeInterstitialIfPresent();
 										if (didRemove) {
-											try { interstitialObserver.disconnect(); } catch(e){}
+											try {
+												interstitialObserver.disconnect();
+											} catch (e) {}
+											interstitialObserver = null;
+											return;
+										}
+									}
+									if (isBaoziAdSelf || hasBaoziAdInner) {
+										const didRemoveAd = removeBaoziAdPopupIfPresent();
+										if (didRemoveAd) {
+											try {
+												interstitialObserver.disconnect();
+											} catch (e) {}
 											interstitialObserver = null;
 											return;
 										}
 									}
 								}
-							} catch (e) { console.warn('monitorInterstitial inner error:', e); }
+							} catch (e) {
+								console.warn("monitorInterstitial inner error:", e);
+							}
 						}
 					}
 				}
 			});
 			const targetNode = document.body || document.documentElement;
 			if (targetNode) interstitialObserver.observe(targetNode, { childList: true, subtree: true });
-			setTimeout(() => { try { if (interstitialObserver) interstitialObserver.disconnect(); interstitialObserver = null;} catch(e){} }, 30000);
+			setTimeout(() => {
+				try {
+					if (interstitialObserver) interstitialObserver.disconnect();
+					interstitialObserver = null;
+				} catch (e) {}
+			}, 30000);
 		} catch (err) {
-			console.error('monitorInterstitial error:', err);
+			console.error("monitorInterstitial error:", err);
 		}
 	}
 	function setApiToken(v) {
-		GM_setValue(API.TOKEN_KEY, String(v || ''));
+		GM_setValue(API.TOKEN_KEY, String(v || ""));
 	}
 
 	// ---------------------------------------------------------------------------
 	// Local Cache for read records
 	// Key format: baozi_cache_<comicKey> => Array<{ss:string, cs:string}>
 	// ---------------------------------------------------------------------------
-	const CACHE_PREFIX = 'baozi_cache_';
+	const CACHE_PREFIX = "baozi_cache_";
 
 	/**
 	 * 取得本地快取的閱讀紀錄
@@ -169,7 +215,7 @@
 	function getLocalReads(comicKey) {
 		const raw = GM_getValue(CACHE_PREFIX + comicKey);
 		if (Array.isArray(raw)) return raw;
-		const arr = typeof raw === 'string' ? safeJSONParse(raw, null) : null;
+		const arr = typeof raw === "string" ? safeJSONParse(raw, null) : null;
 		return Array.isArray(arr) ? arr : [];
 	}
 
@@ -182,9 +228,9 @@
 		try {
 			GM_setValue(CACHE_PREFIX + comicKey, JSON.stringify(list || []));
 		} catch (e) {
-			console.warn('setLocalReads failed', e);
-			if (typeof showAlert === 'function') {
-				showAlert('本地紀錄儲存失敗: ' + (e && e.message ? e.message : e), 2500);
+			console.warn("setLocalReads failed", e);
+			if (typeof showAlert === "function") {
+				showAlert("本地紀錄儲存失敗: " + (e && e.message ? e.message : e), 2500);
 			}
 		}
 	}
@@ -220,7 +266,7 @@
 		// 聯集 key
 		const unionKeys = new Set([...localSet, ...remoteSet]);
 		const unioned = [...unionKeys].map((k) => {
-			const [ss, cs] = k.split('-');
+			const [ss, cs] = k.split("-");
 			return { ss, cs };
 		});
 
@@ -228,7 +274,7 @@
 		setLocalReads(comicKey, unioned);
 
 		// 雲端同步：僅在雲端資料與聯集不同時才同步，且聯集不為空才執行
-		if (getApiToken() && typeof apiClear === 'function' && typeof apiSave === 'function') {
+		if (getApiToken() && typeof apiClear === "function" && typeof apiSave === "function") {
 			const unionSet = new Set(unioned.map((x) => `${x.ss}-${x.cs}`));
 			let isSame = true;
 			if (unionSet.size !== remoteSet.size) {
@@ -245,11 +291,11 @@
 			// 僅當聯集不為空且雲端資料與聯集不同時才同步
 			if (!isSame && unioned.length > 0) {
 				apiClear(comicKey)
-					.then(() => Promise.all(unioned.map((it) => apiSave({ comicKey, ss: it.ss, cs: it.cs })))).
-					catch((e) => {
-						console.warn('remote sync failed:', e);
-						if (typeof showAlert === 'function') {
-							showAlert('雲端同步失敗: ' + (e && e.message ? e.message : e), 2500);
+					.then(() => Promise.all(unioned.map((it) => apiSave({ comicKey, ss: it.ss, cs: it.cs }))))
+					.catch((e) => {
+						console.warn("remote sync failed:", e);
+						if (typeof showAlert === "function") {
+							showAlert("雲端同步失敗: " + (e && e.message ? e.message : e), 2500);
 						}
 					});
 			}
@@ -389,9 +435,9 @@
 		try {
 			return JSON.parse(raw);
 		} catch (error) {
-			console.warn('JSON parse error:', error);
-			if (typeof showAlert === 'function') {
-				showAlert('JSON 解析錯誤: ' + (error && error.message ? error.message : error), 2000);
+			console.warn("JSON parse error:", error);
+			if (typeof showAlert === "function") {
+				showAlert("JSON 解析錯誤: " + (error && error.message ? error.message : error), 2000);
 			}
 			return defaultValue;
 		}
@@ -459,8 +505,6 @@
 				inThrottle = true;
 				setTimeout(() => (inThrottle = false), limit);
 			}
-
-            
 		};
 	}
 
@@ -476,39 +520,39 @@
 			// 若未設定 Token，立即提示使用者輸入（僅提示一次）
 			if (!token && !tokenPrompted) {
 				tokenPrompted = true;
-				const v = prompt('請輸入 API Token（留空則以離線模式）', '');
+				const v = prompt("請輸入 API Token（留空則以離線模式）", "");
 				if (v && v.trim()) {
 					setApiToken(v.trim());
 					token = v.trim();
-					showAlert('已設定 API Token', 1500);
+					showAlert("已設定 API Token", 1500);
 				} else {
-					showAlert('未設定 API Token，將以離線模式運作', 2000);
+					showAlert("未設定 API Token，將以離線模式運作", 2000);
 				}
 			}
 
 			if (!token) {
-				return resolve({ rc: -1, rm: 'no-token' });
+				return resolve({ rc: -1, rm: "no-token" });
 			}
 
 			try {
 				GM_xmlhttpRequest({
-					method: 'POST',
+					method: "POST",
 					url: endpoint,
 					data: JSON.stringify({ token: token, ac, ...payload }),
-					headers: { 'Content-Type': 'application/json' },
+					headers: { "Content-Type": "application/json" },
 					timeout: API.TIMEOUT,
 					onload: (res) => {
 						try {
 							const json = safeJSONParse(res.responseText, null);
-							if (!json) return reject(new Error('API 解析失敗'));
+							if (!json) return reject(new Error("API 解析失敗"));
 							if (json.rc === 0) return resolve(json);
-							return reject(new Error(json.rm || 'API 錯誤'));
+							return reject(new Error(json.rm || "API 錯誤"));
 						} catch (e) {
 							reject(e);
 						}
 					},
-					onerror: () => reject(new Error('API 連線失敗')),
-					ontimeout: () => reject(new Error('API 等待逾時')),
+					onerror: () => reject(new Error("API 連線失敗")),
+					ontimeout: () => reject(new Error("API 等待逾時")),
 				});
 			} catch (error) {
 				reject(error);
@@ -517,13 +561,13 @@
 	}
 
 	function apiSave(data) {
-		return apiPost('save', data);
+		return apiPost("save", data);
 	}
 	function apiList(comicKey) {
-		return apiPost('list', { comicKey });
+		return apiPost("list", { comicKey });
 	}
 	function apiClear(comicKey) {
-		return apiPost('clear', { comicKey });
+		return apiPost("clear", { comicKey });
 	}
 
 	// ---------------------------------------------------------------------------
@@ -535,11 +579,11 @@
 	 */
 	function initAlertSystem() {
 		try {
-			alertDiv = GM_addElement(document.body, 'div', { class: 'alertContainer' });
+			alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
 		} catch (error) {
-			console.error('Failed to initialize alert system:', error);
-			if (typeof showAlert === 'function') {
-				showAlert('提醒系統初始化失敗: ' + (error && error.message ? error.message : error), 2500);
+			console.error("Failed to initialize alert system:", error);
+			if (typeof showAlert === "function") {
+				showAlert("提醒系統初始化失敗: " + (error && error.message ? error.message : error), 2500);
 			}
 		}
 	}
@@ -551,13 +595,13 @@
 	 */
 	function showAlert(message, timeout = CONFIG.DEFAULT_ALERT_TIMEOUT) {
 		if (!alertDiv) {
-			console.warn('Alert system not initialized, falling back to console:', message);
+			console.warn("Alert system not initialized, falling back to console:", message);
 			return;
 		}
 
 		try {
-			const msg = GM_addElement(alertDiv, 'div', {
-				class: 'alertMessage',
+			const msg = GM_addElement(alertDiv, "div", {
+				class: "alertMessage",
 				textContent: message,
 			});
 
@@ -582,10 +626,10 @@
 				}
 			}, timeout);
 		} catch (error) {
-			console.error('Alert display error:', error, 'Message:', message);
-			if (typeof showAlert === 'function' && message !== '顯示錯誤訊息失敗') {
+			console.error("Alert display error:", error, "Message:", message);
+			if (typeof showAlert === "function" && message !== "顯示錯誤訊息失敗") {
 				// 避免遞迴
-				setTimeout(() => alert('顯示錯誤訊息失敗: ' + (error && error.message ? error.message : error)), 100);
+				setTimeout(() => alert("顯示錯誤訊息失敗: " + (error && error.message ? error.message : error)), 100);
 			}
 		}
 	}
@@ -602,8 +646,8 @@
 		const match = url.match(CONFIG.URL_PATTERN);
 
 		if (!match) {
-			console.error('URL 格式不正確:', url);
-			showAlert('無法解析章節資訊', 2000);
+			console.error("URL 格式不正確:", url);
+			showAlert("無法解析章節資訊", 2000);
 			return;
 		}
 
@@ -621,9 +665,9 @@
 
 		// 再同步到雲端（不阻塞 UI）
 		apiSave({ comicKey: key, ...readData }).catch((error) => {
-			console.error('Save read progress (remote) error:', error);
-			if (typeof showAlert === 'function') {
-				showAlert('雲端儲存失敗: ' + (error && error.message ? error.message : error), 2000);
+			console.error("Save read progress (remote) error:", error);
+			if (typeof showAlert === "function") {
+				showAlert("雲端儲存失敗: " + (error && error.message ? error.message : error), 2000);
 			}
 			// 失敗不回滾本地，等下次交集同步會修正
 		});
@@ -635,9 +679,9 @@
 	function showLastRead() {
 		const url = window.location.href;
 		try {
-			const key = new URL(url).pathname.split('/').pop();
+			const key = new URL(url).pathname.split("/").pop();
 			if (!key) {
-				showAlert('無法取得漫畫識別碼', 2000);
+				showAlert("無法取得漫畫識別碼", 2000);
 				return;
 			}
 
@@ -646,7 +690,7 @@
 			if (localList.length > 0) {
 				localList.forEach((value) => {
 					const links = safeQuerySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
-					links.forEach((ele) => ele.classList.add('read-chapter'));
+					links.forEach((ele) => ele.classList.add("read-chapter"));
 				});
 				showAlert(`(本機) 已標示 ${localList.length} 個已讀章節`, 1200);
 			}
@@ -656,37 +700,37 @@
 				.then((resp) => {
 					if (!resp || resp.rc !== 0) {
 						// 無 Token 或雲端回應非成功，不進行交集同步，保留本地顯示
-						showAlert('未同步雲端（無 Token 或錯誤）', 1200);
+						showAlert("未同步雲端（無 Token 或錯誤）", 1200);
 						return;
 					}
 					const remoteList = Array.isArray(resp.rs) ? resp.rs : [];
 					const unioned = intersectAndSync(key, remoteList);
 					// 先清掉舊標記再標示聯集（避免顯示超出聯集的本地項）
-					const readChapters = safeQuerySelectorAll('.read-chapter');
-					readChapters.forEach((chapter) => chapter.classList.remove('read-chapter'));
+					const readChapters = safeQuerySelectorAll(".read-chapter");
+					readChapters.forEach((chapter) => chapter.classList.remove("read-chapter"));
 					unioned.forEach((value) => {
 						const links = safeQuerySelectorAll(`a[href$="section_slot=${value.ss}&chapter_slot=${value.cs}"]`);
-						links.forEach((ele) => ele.classList.add('read-chapter'));
+						links.forEach((ele) => ele.classList.add("read-chapter"));
 					});
-					showAlert(`(同步) 已標示 ${unioned.length} 個已讀章節\n[${unioned.map(x=>x.ss+'-'+x.cs).join(', ')}]`, 2500);
+					showAlert(`(同步) 已標示 ${unioned.length} 個已讀章節\n[${unioned.map((x) => x.ss + "-" + x.cs).join(", ")}]`, 2500);
 				})
 				.catch((error) => {
-					console.error('Show last read error:', error);
-					showAlert('讀取雲端紀錄失敗 ' + error, 2000);
+					console.error("Show last read error:", error);
+					showAlert("讀取雲端紀錄失敗 " + error, 2000);
 				});
 
 			// 新增清除按鈕
 			const btnWrap = safeQuerySelector(SELECTORS.ACTION_BUTTONS);
 			if (btnWrap && !safeQuerySelector(SELECTORS.CLEAR_READ_BTN, btnWrap)) {
-				const btn = GM_addElement(btnWrap, 'button', {
-					class: 'clearReadBtn',
-					textContent: '清除閱讀紀錄',
+				const btn = GM_addElement(btnWrap, "button", {
+					class: "clearReadBtn",
+					textContent: "清除閱讀紀錄",
 				});
 
-				btn.addEventListener('click', handleClearReads);
+				btn.addEventListener("click", handleClearReads);
 			}
 		} catch (error) {
-			console.error('Show last read error:', error);
+			console.error("Show last read error:", error);
 			showAlert(`顯示閱讀紀錄失敗: ${error.message}`, 3000);
 		}
 	}
@@ -697,26 +741,26 @@
 	function handleClearReads() {
 		try {
 			const url = window.location.href;
-			const key = new URL(url).pathname.split('/').pop();
+			const key = new URL(url).pathname.split("/").pop();
 			const titleEle = safeQuerySelector(SELECTORS.COMICS_TITLE);
-			const comicTitle = titleEle?.textContent?.replace(/\n/g, '').trim() || '此漫畫';
+			const comicTitle = titleEle?.textContent?.replace(/\n/g, "").trim() || "此漫畫";
 
 			if (confirm(`確定要清除 ${comicTitle} 的閱讀紀錄嗎？`)) {
 				// 先清本地
 				setLocalReads(key, []);
 				// UI 清除
-				const readChapters = safeQuerySelectorAll('.read-chapter');
-				readChapters.forEach((chapter) => chapter.classList.remove('read-chapter'));
-				showAlert('已清除閱讀紀錄');
+				const readChapters = safeQuerySelectorAll(".read-chapter");
+				readChapters.forEach((chapter) => chapter.classList.remove("read-chapter"));
+				showAlert("已清除閱讀紀錄");
 				// 再清雲端
 				apiClear(key).catch((error) => {
-					console.error('Clear reads (remote) error:', error);
-					showAlert('雲端清除失敗', 2000);
+					console.error("Clear reads (remote) error:", error);
+					showAlert("雲端清除失敗", 2000);
 				});
 			}
 		} catch (error) {
-			console.error('Clear reads error:', error);
-			showAlert('清除失敗', 2000);
+			console.error("Clear reads error:", error);
+			showAlert("清除失敗", 2000);
 		}
 	}
 
@@ -761,24 +805,24 @@
 	 */
 	function clickNext() {
 		const hostname = window.location.hostname;
-		
+
 		// Colamanga 使用 URL 跳轉方式
-		if (hostname === 'www.colamanga.com') {
+		if (hostname === "www.colamanga.com") {
 			const nextUrl = getColamangaNextPage();
 			if (nextUrl) {
 				window.location.href = nextUrl;
 			} else {
-				showAlert('已是最後一頁', 1500);
+				showAlert("已是最後一頁", 1500);
 			}
 			return;
 		}
-		
+
 		// 其他站點使用按鈕點擊方式
 		const nextBtn = safeQuerySelector(SELECTORS.NEXT_CHAPTER);
 		if (nextBtn) {
 			nextBtn.click();
 		} else {
-			showAlert('已是最後一章', 1500);
+			showAlert("已是最後一章", 1500);
 		}
 	}
 
@@ -787,24 +831,24 @@
 	 */
 	function clickPrev() {
 		const hostname = window.location.hostname;
-		
+
 		// Colamanga 使用 URL 跳轉方式
-		if (hostname === 'www.colamanga.com') {
+		if (hostname === "www.colamanga.com") {
 			const prevUrl = getColamangaPrevPage();
 			if (prevUrl) {
 				window.location.href = prevUrl;
 			} else {
-				showAlert('已是第一頁', 1500);
+				showAlert("已是第一頁", 1500);
 			}
 			return;
 		}
-		
+
 		// 其他站點使用按鈕點擊方式
 		const prevBtn = safeQuerySelector(SELECTORS.PREV_CHAPTER);
 		if (prevBtn) {
 			prevBtn.click();
 		} else {
-			showAlert('已是第一章', 1500);
+			showAlert("已是第一章", 1500);
 		}
 	}
 
@@ -830,7 +874,7 @@
 	function smoothScroll(amount) {
 		window.scrollBy({
 			top: amount,
-			behavior: 'smooth',
+			behavior: "smooth",
 		});
 	}
 
@@ -841,14 +885,14 @@
 		try {
 			if (document.fullscreenElement) {
 				document.exitFullscreen();
-				showAlert('退出全螢幕', 1000);
+				showAlert("退出全螢幕", 1000);
 			} else {
 				document.documentElement.requestFullscreen();
-				showAlert('進入全螢幕', 1000);
+				showAlert("進入全螢幕", 1000);
 			}
 		} catch (error) {
-			console.error('Fullscreen toggle error:', error);
-			showAlert('全螢幕切換失敗', 2000);
+			console.error("Fullscreen toggle error:", error);
+			showAlert("全螢幕切換失敗", 2000);
 		}
 	}
 
@@ -887,44 +931,44 @@
 	 */
 	function handleKeydown(event) {
 		// 避免在輸入框中觸發快捷鍵
-		if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+		if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") {
 			return;
 		}
 
 		switch (event.key) {
-			case 'w':
-			case 'W':
-			case 'PageUp':
+			case "w":
+			case "W":
+			case "PageUp":
 				event.preventDefault();
 				smoothScroll(-window.innerHeight * CONFIG.SCROLL_PERCENTAGE);
 				autoPrevPage();
 				break;
 
-			case 's':
-			case 'S':
-			case ' ':
-			case 'PageDown':
+			case "s":
+			case "S":
+			case " ":
+			case "PageDown":
 				event.preventDefault();
 				smoothScroll(window.innerHeight * CONFIG.SCROLL_PERCENTAGE);
 				autoNextPage();
 				break;
 
-			case 'a':
-			case 'A':
-			case 'ArrowLeft':
+			case "a":
+			case "A":
+			case "ArrowLeft":
 				event.preventDefault();
 				clickPrev();
 				break;
 
-			case 'd':
-			case 'D':
-			case 'ArrowRight':
+			case "d":
+			case "D":
+			case "ArrowRight":
 				event.preventDefault();
 				clickNext();
 				break;
 
-			case 'f':
-			case 'F':
+			case "f":
+			case "F":
 				event.preventDefault();
 				toggleFullscreen();
 				break;
@@ -956,9 +1000,9 @@
 	 * 添加鍵盤/滑輪/觸控操作邏輯 (twmanga)
 	 */
 	function addHotkey() {
-		document.addEventListener('click', handleClick);
-		document.addEventListener('keydown', handleKeydown);
-		document.addEventListener('wheel', handleWheel, { passive: true });
+		document.addEventListener("click", handleClick);
+		document.addEventListener("keydown", handleKeydown);
+		document.addEventListener("wheel", handleWheel, { passive: true });
 	}
 
 	// ---------------------------------------------------------------------------
@@ -978,7 +1022,7 @@
 					element.remove();
 				}
 			} catch (error) {
-				console.warn('Remove element error:', error);
+				console.warn("Remove element error:", error);
 			}
 		});
 	}
@@ -991,7 +1035,7 @@
 		if (!container) return;
 
 		try {
-			const items = Array.from(container.querySelectorAll(':scope > div'));
+			const items = Array.from(container.querySelectorAll(":scope > div"));
 			if (items.length === 0) return;
 
 			const fragment = document.createDocumentFragment();
@@ -999,18 +1043,16 @@
 			items
 				.map((element) => ({
 					element,
-					number: parseFloat(element.textContent.match(CONFIG.CHAPTER_SORT_PATTERN)?.[1] || '0'),
+					number: parseFloat(element.textContent.match(CONFIG.CHAPTER_SORT_PATTERN)?.[1] || "0"),
 				}))
 				.sort((a, b) => b.number - a.number)
 				.forEach(({ element }) => fragment.appendChild(element));
 
-			container.innerHTML = '';
+			container.innerHTML = "";
 			container.appendChild(fragment);
 		} catch (error) {
-			console.error('Sort chapters error:', error);
+			console.error("Sort chapters error:", error);
 		}
-
-        
 	}
 
 	// ---------------------------------------------------------------------------
@@ -1029,9 +1071,9 @@
 		isLoaded = true;
 		// 如果之前使用 interval 或 observer 監控，清理它
 		try {
-			if (typeof loader === 'number') {
+			if (typeof loader === "number") {
 				clearInterval(loader);
-			} else if (loader && typeof loader.disconnect === 'function') {
+			} else if (loader && typeof loader.disconnect === "function") {
 				loader.disconnect();
 			}
 		} catch (e) {
@@ -1041,15 +1083,15 @@
 
 		try {
 			// 清理不需要的元素
-			removeElements('.l-content', '猜你喜歡');
-			removeElements('.footer');
-			removeElements('.recommend');
-			removeElements('.addthis-box');
+			removeElements(".l-content", "猜你喜歡");
+			removeElements(".footer");
+			removeElements(".recommend");
+			removeElements(".addthis-box");
 
 			// 展開「查看全部」按鈕
-			const viewAllButtons = safeQuerySelectorAll('button');
+			const viewAllButtons = safeQuerySelectorAll("button");
 			viewAllButtons.forEach((btn) => {
-				if (btn.textContent?.includes('查看全部')) {
+				if (btn.textContent?.includes("查看全部")) {
 					btn.click();
 				}
 			});
@@ -1058,33 +1100,36 @@
 			// 這些可能相對耗時，儘量讓瀏覽器在閒置時執行
 			const runChapterWork = () => {
 				sectionTitles.forEach((sectionTitle) => {
-				const text = sectionTitle.textContent || '';
-				if (text.includes('最新章節')) {
-					sortChapters(sectionTitle.nextElementSibling);
-				} else if (text.includes('章節目錄')) {
-					const chapterItems = safeQuerySelector(SELECTORS.CHAPTER_ITEMS);
-					const chaptersOther = safeQuerySelector(SELECTORS.CHAPTERS_OTHER);
+					const text = sectionTitle.textContent || "";
+					if (text.includes("最新章節")) {
+						sortChapters(sectionTitle.nextElementSibling);
+					} else if (text.includes("章節目錄")) {
+						const chapterItems = safeQuerySelector(SELECTORS.CHAPTER_ITEMS);
+						const chaptersOther = safeQuerySelector(SELECTORS.CHAPTERS_OTHER);
 
-					if (chapterItems && chaptersOther) {
-						const otherChapters = chaptersOther.querySelectorAll(':scope > div');
-						otherChapters.forEach((chapter) => chapterItems.appendChild(chapter));
-					}
+						if (chapterItems && chaptersOther) {
+							const otherChapters = chaptersOther.querySelectorAll(":scope > div");
+							otherChapters.forEach((chapter) => chapterItems.appendChild(chapter));
+						}
 
-					if (chapterItems) {
-						sortChapters(chapterItems);
+						if (chapterItems) {
+							sortChapters(chapterItems);
+						}
 					}
-				}
 				});
 			};
 			runWhenIdle(runChapterWork, { timeout: 500 });
 
-			runWhenIdle(() => {
-				showLastRead();
-				showAlert('頁面載入完成', 1500);
-			}, { timeout: 500 });
+			runWhenIdle(
+				() => {
+					showLastRead();
+					showAlert("頁面載入完成", 1500);
+				},
+				{ timeout: 500 }
+			);
 		} catch (error) {
-			console.error('Handle loader error:', error);
-			showAlert('初始化失敗', 2000);
+			console.error("Handle loader error:", error);
+			showAlert("初始化失敗", 2000);
 		}
 	}
 
@@ -1096,8 +1141,8 @@
 			saveLastRead();
 			addHotkey();
 		} catch (error) {
-			console.error('TWManga handler error:', error);
-			showAlert('TWManga 初始化失敗', 2000);
+			console.error("TWManga handler error:", error);
+			showAlert("TWManga 初始化失敗", 2000);
 		}
 	}
 
@@ -1120,13 +1165,16 @@
 						for (const node of m.addedNodes) {
 							try {
 								if (node && node.nodeType === Node.ELEMENT_NODE) {
-									if ((node.matches && node.matches(SELECTORS.SECTION_TITLES)) || node.querySelector && node.querySelector(SELECTORS.SECTION_TITLES)) {
+									if (
+										(node.matches && node.matches(SELECTORS.SECTION_TITLES)) ||
+										(node.querySelector && node.querySelector(SELECTORS.SECTION_TITLES))
+									) {
 										// 切換到 handleLoader，並拆除 observer
 										handleLoader();
 										try {
 											observer.disconnect();
 										} catch (err) {
-											console.warn('Failed to disconnect loaderObserver:', err);
+											console.warn("Failed to disconnect loaderObserver:", err);
 										}
 										return;
 									}
@@ -1139,17 +1187,17 @@
 				}
 			});
 			const target = document.body || document.documentElement;
-				if (target) loader.observe(target, { childList: true, subtree: true });
+			if (target) loader.observe(target, { childList: true, subtree: true });
 			// fallback: ensure we don't leave it forever; stop after 10s
 			setTimeout(() => {
 				try {
-					if (loader && typeof loader.disconnect === 'function') loader.disconnect();
+					if (loader && typeof loader.disconnect === "function") loader.disconnect();
 				} catch (e) {}
 			}, 10000);
 			return;
 		} catch (error) {
-			console.error('Baozimh handler error:', error);
-			showAlert('Baozimh 初始化失敗', 2000);
+			console.error("Baozimh handler error:", error);
+			showAlert("Baozimh 初始化失敗", 2000);
 		}
 	}
 
@@ -1160,10 +1208,10 @@
 	function handleColamanga() {
 		try {
 			addHotkey();
-			showAlert('Colamanga 快捷鍵已啟用', 1500);
+			showAlert("Colamanga 快捷鍵已啟用", 1500);
 		} catch (error) {
-			console.error('Colamanga handler error:', error);
-			showAlert('Colamanga 初始化失敗', 2000);
+			console.error("Colamanga handler error:", error);
+			showAlert("Colamanga 初始化失敗", 2000);
 		}
 	}
 
@@ -1171,16 +1219,16 @@
 	 * 添加用戶選單命令
 	 */
 	function addUserMenuCommands() {
-		GM_registerMenuCommand('設定 API Token', () => {
+		GM_registerMenuCommand("設定 API Token", () => {
 			const cur = getApiToken();
-			const v = prompt('請輸入 API Token', cur || '');
+			const v = prompt("請輸入 API Token", cur || "");
 			if (v !== null) {
 				setApiToken(v);
-				alert('已設定 API Token');
+				alert("已設定 API Token");
 			}
 		});
 
-		GM_registerMenuCommand('顯示快捷鍵說明', () => {
+		GM_registerMenuCommand("顯示快捷鍵說明", () => {
 			const helpText = `
 快捷鍵說明：
 • W/S: 上下滾動
@@ -1221,27 +1269,27 @@
 			// 根據站點執行對應邏輯
 			const hostname = window.location.hostname;
 
-			if (hostname === 'www.twmanga.com') {
+			if (hostname === "www.twmanga.com") {
 				handleTwmanga();
-			} else if (hostname === 'www.baozimh.com') {
+			} else if (hostname === "www.baozimh.com") {
 				handleBaozimh();
-			} else if (hostname === 'www.colamanga.com') {
+			} else if (hostname === "www.colamanga.com") {
 				handleColamanga();
 			} else {
-				console.warn('Unsupported hostname:', hostname);
+				console.warn("Unsupported hostname:", hostname);
 			}
 		} catch (error) {
-			console.error('Initialization error:', error);
+			console.error("Initialization error:", error);
 			// 即使初始化失敗，也嘗試顯示錯誤訊息
-			if (typeof showAlert === 'function') {
-				showAlert('腳本初始化失敗', 3000);
+			if (typeof showAlert === "function") {
+				showAlert("腳本初始化失敗", 3000);
 			}
 		}
 	}
 
 	// 確保 DOM 載入完成後才執行
-	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', initialize);
+	if (document.readyState === "loading") {
+		document.addEventListener("DOMContentLoaded", initialize);
 	} else {
 		initialize();
 	}
