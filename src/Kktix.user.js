@@ -28,9 +28,10 @@ let step = 0;
 (function () {
 	("use strict");
 
-	startCountdown();
+	let observerEnabled = false;
 
 	const observer = new MutationObserver(() => {
+		if (!observerEnabled) return;
 		console.log("偵測到 DOM 變更");
 		handlePage();
 	});
@@ -204,12 +205,23 @@ let step = 0;
 	// 倒數邏輯
 	function startCountdown() {
 		const refreshTime = new Date(config.refresh_time.replace(/-/g, "/"));
+		const now = new Date();
+		const diff = refreshTime - now;
+		
+		// 若已經超過刷新時間，不需倒數，直接啟用 DOM 監聽
+		if (diff <= 0) {
+			console.log("無需倒數，直接監聽 DOM 變更");
+			observerEnabled = true;
+			return;
+		}
+
 		const display = createCountdownDisplay();
 		let stopped = false;
 		let displayAppended = false;
 		const intervalId = setInterval(() => {
 			if (stopped) {
 				clearInterval(intervalId);
+				observerEnabled = true;
 				return;
 			}
 			update();
@@ -242,6 +254,8 @@ let step = 0;
 
 	// 初始執行一次
 	handlePage();
+
+	startCountdown();
 
 	observer.observe(document.body, { childList: true, subtree: true });
 })();
