@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.25.1123.1500
-// @description  try to take over the world!
+// @version      1.26.1123.1550
+// @description  自動票券選擇與提交，自動接受/忽略 alert 與 confirm，並於左上角顯示已自動點擊訊息 10 秒
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=kktix.com
@@ -11,20 +11,88 @@
 // @grant        none
 // ==/UserScript==
 
-/*
-keyword：票券關鍵字，支援多組關鍵字，依序比對，空字串代表不篩選
-qty：票券數量
-member_code：會員代碼，如無可留空字串 (僅在有會員代碼欄位時自動填入)
-refresh_time：自動刷新時間，格式 YYYY/MM/DD HH:MM:SS (建議設定搶票時間前 1~5 秒)
+/* 設定說明
+	keyword：票券關鍵字，支援多組關鍵字，依序比對，空字串代表不篩選
+	qty：票券數量
+	member_code：會員代碼，如無可留空字串 (僅在有會員代碼欄位時自動填入)
+	refresh_time：自動刷新時間，格式 YYYY/MM/DD HH:MM:SS (建議設定搶票時間前 1~5 秒)
 */
-const config = {
+const CUSTOM_CONFIG = {
 	keyword: [""],
 	qty: 2,
 	member_code: "VEZ9XJ",
 	refresh_time: "2025/11/23 11:59:59",
 };
+
+// ===== 全域優化常量 =====
+const SELECTORS = {
+	registerStatus: ".register-status",
+	ticketUnit: ".ticket-unit",
+	qtyInput: "input[type='text'][ng-model='ticketModel.quantity']",
+	memberCodeInput: "input[type='text'][ng-if=\"oq.type == 'member_code'\"]",
+	agreeTerms: "#person_agree_terms",
+	nextButton: ".register-new-next-button-area button.btn-primary",
+	imgWrapper: ".img-wrapper",
+	footer: ".footer",
+	countdownDisplay: "#kktix-countdown-display"
+};
+
+const DELAYS = {
+	actionClick: 0,
+	reload: 50
+};
+
+const REFRESH_CLASSES = new Set(["register-status-OUT_OF_STOCK", "register-status-REGISTRATION_CLOSED", "register-status-CLOSED"]);
+const EXCLUDED_TEXTS = ["暫無票券", "已售完", "輪椅席", "身障席"];
+const REMAIN_TICKETS_REGEX = /剩\s*(\d+)\s*張/;
+
 let step = 0;
 
+// 自動處理原生對話框：alert/confirm
+// alert：改成僅記錄不阻塞；confirm：強制回傳 true
+(function overrideDialogs() {
+	const CONTAINER_ID = "kktix-dialog-log";
+	function ensureContainer() {
+		let box = document.getElementById(CONTAINER_ID);
+		if (!box) {
+			box = document.createElement("div");
+			box.id = CONTAINER_ID;
+			box.style.cssText = "position:fixed;top:56px;left:10px;z-index:10000;display:flex;flex-direction:column;gap:6px;max-width:320px;font-size:14px";
+			document.body && document.body.appendChild(box);
+		}
+		return box;
+	}
+	function pushMessage(raw, type) {
+		const box = ensureContainer();
+		const wrap = document.createElement("div");
+		wrap.style.cssText = "background:rgba(0,0,0,.75);color:#fff;padding:6px 10px;border-radius:6px;line-height:1.4;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.15);word-break:break-all";
+		const label = type === "confirm" ? "confirm" : "alert";
+		wrap.textContent = `已自動點擊 ${label}: ${String(raw)}`;
+		box.appendChild(wrap);
+		setTimeout(() => { wrap.remove(); if (box.children.length === 0) box.remove(); }, 10000);
+	}
+	try {
+		const originalAlert = window.alert;
+		const originalConfirm = window.confirm;
+		window.alert = function (msg) {
+			console.log("[AutoAlert suppressed]", msg);
+			pushMessage(msg, "alert");
+		};
+		window.confirm = function (msg) {
+			console.log("[AutoConfirm accepted]", msg);
+			pushMessage(msg, "confirm");
+			return true;
+		};
+		for (let i = 0; i < window.frames.length; i++) {
+			try {
+				window.frames[i].alert = window.alert;
+				window.frames[i].confirm = window.confirm;
+			} catch (_) {}
+		}
+	} catch (e) {
+		console.log("[Dialog override failed]", e);
+	}
+})();
 (function () {
 	("use strict");
 
@@ -37,41 +105,44 @@ let step = 0;
 	});
 
 	function shouldAutoRefresh(statusElements) {
-		const refreshClasses = ["register-status-OUT_OF_STOCK", "register-status-REGISTRATION_CLOSED", "register-status-CLOSED"];
 		for (let i = 0; i < statusElements.length; i++) {
-			const el = statusElements[i];
-			for (let j = 0; j < refreshClasses.length; j++) {
-				if (el.classList.contains(refreshClasses[j])) {
-					return true;
-				}
+			const classList = statusElements[i].classList;
+			for (const className of REFRESH_CLASSES) {
+				if (classList.contains(className)) return true;
 			}
 		}
 		return false;
 	}
 
+	let pageCleared = false;
 	function clearPage() {
-		const elements = document.querySelectorAll(".img-wrapper, .footer");
+		if (pageCleared) return;
+		const elements = document.querySelectorAll(SELECTORS.imgWrapper + ", " + SELECTORS.footer);
 		for (let i = 0; i < elements.length; i++) {
 			elements[i].remove();
 		}
+		pageCleared = true;
 	}
 
 	function clearTicketUnits() {
-		const rows = document.querySelectorAll(".ticket-unit");
+		const rows = document.querySelectorAll(SELECTORS.ticketUnit);
 		for (let i = rows.length - 1; i >= 0; i--) {
 			const row = rows[i];
 			const text = row.textContent;
-			if (text.includes("暫無票券") || text.includes("已售完") || text.includes("輪椅席") || text.includes("身障席")) {
-				row.remove();
-				continue;
-			}
-			const match = text.match(/剩\s*(\d+)\s*張/);
-			if (match) {
-				const remain = parseInt(match[1], 10);
-				if (remain > 0 && remain < config.qty) {
-					row.remove();
+			let shouldRemove = false;
+			for (const excluded of EXCLUDED_TEXTS) {
+				if (text.includes(excluded)) {
+					shouldRemove = true;
+					break;
 				}
 			}
+			if (!shouldRemove) {
+				const match = text.match(REMAIN_TICKETS_REGEX);
+				if (match && parseInt(match[1], 10) < CUSTOM_CONFIG.qty) {
+					shouldRemove = true;
+				}
+			}
+			if (shouldRemove) row.remove();
 		}
 	}
 
@@ -83,109 +154,87 @@ let step = 0;
 	}
 
 	function autoFillMemberCode() {
-		const inputs = document.querySelectorAll("input[type='text'][ng-if=\"oq.type == 'member_code'\"]");
+		const inputs = document.querySelectorAll(SELECTORS.memberCodeInput);
 		for (let i = 0; i < inputs.length; i++) {
 			const input = inputs[i];
-			console.log("填入會員代碼:", config.member_code);
-			input.value = config.member_code;
-			input.dispatchEvent(new Event("input", { bubbles: true }));
+			if (input.value !== CUSTOM_CONFIG.member_code) {
+				input.value = CUSTOM_CONFIG.member_code;
+				input.dispatchEvent(new Event("input", { bubbles: true }));
+			}
 		}
 	}
 
 	function selectTicketByKeyword() {
-		const keywords = config.keyword;
-		const qty = config.qty;
-		const ticketUnitNodeList = document.querySelectorAll(".ticket-unit");
-		const ticketUnits = [];
-		for (let i = 0; i < ticketUnitNodeList.length; i++) {
-			ticketUnits.push(ticketUnitNodeList[i]);
-		}
-		// 將 ticket-unit 文字內容做前處理（去除逗號、去除多餘空白）
-		const getText = (el) => el.textContent.replace(/,/g, "").replace(/\s+/g, " ").trim();
-		// 依序比對每個 keyword
+		const ticketUnitNodeList = document.querySelectorAll(SELECTORS.ticketUnit);
+		const ticketUnits = Array.from(ticketUnitNodeList);
+		if (ticketUnits.length === 0) return;
+		
+		const keywords = CUSTOM_CONFIG.keyword;
+		const qty = CUSTOM_CONFIG.qty;
+		
+		// 預計算所有票券文本一次，使用 Map 緩存
+		const textCache = new Map();
+		const cleanText = (text) => text.replace(/,/g, "").replace(/\s+/g, " ").trim();
+		ticketUnits.forEach(el => {
+			textCache.set(el, cleanText(el.textContent));
+		});
+		
+		// 依序比對關鍵字一次找到符合的票券
 		let matchedUnits = [];
 		for (let i = 0; i < keywords.length; i++) {
 			const keyword = keywords[i].trim();
 			if (keyword === "") {
 				matchedUnits = ticketUnits;
-			} else {
-				const andWords = keyword.split(" ").filter(Boolean);
-				matchedUnits = [];
-				for (let k = 0; k < ticketUnits.length; k++) {
-					const el = ticketUnits[k];
-					const text = getText(el);
-					let allMatch = true;
-					for (let w = 0; w < andWords.length; w++) {
-						if (!text.includes(andWords[w])) {
-							allMatch = false;
-							break;
-						}
-					}
-					if (allMatch) {
-						matchedUnits.push(el);
-					}
-				}
+				break;
 			}
+			
+			const andWords = keyword.split(" ").filter(Boolean);
+			matchedUnits = ticketUnits.filter(el => {
+				const text = textCache.get(el);
+				return andWords.every(word => text.includes(word));
+			});
+			
 			if (matchedUnits.length > 0) break;
 		}
+		
 		if (matchedUnits.length === 0) return;
+		
 		// 隨機選一個
 		const selected = matchedUnits[Math.floor(Math.random() * matchedUnits.length)];
-		// 標記背景色
 		selected.style.backgroundColor = "yellow";
-		// 找到 input 並填入數量
-		const input = selected.querySelector("input[type='text'][ng-model='ticketModel.quantity']");
-		if (input) {
-			// 觸發所有 Angular 事件
-			const events = ["input", "change", "blur"];
-			for (let i = 0; i < events.length; i++) {
-				input.value = qty;
-				input.dispatchEvent(new Event(events[i], { bubbles: true }));
-			}
-			input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "0" }));
-			input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "0" }));
+		
+		// 找到 input 並填入數量，儘設 input 一次
+		const input = selected.querySelector(SELECTORS.qtyInput);
+		if (input && input.value !== qty.toString()) {
+			input.value = qty;
+			input.dispatchEvent(new Event("input", { bubbles: true }));
 		}
 	}
 
 	function checkAndClickNext() {
-		// 檢查是否有任一票券已填寫數量
-		const qtyInputs = document.querySelectorAll("input[type='text'][ng-model='ticketModel.quantity']");
-		let qtyFilled = false;
-		for (let i = 0; i < qtyInputs.length; i++) {
-			if (Number(qtyInputs[i].value) > 0) {
-				qtyFilled = true;
-				break;
-			}
-		}
-		// 檢查會員代碼（如有 input）
-		const memberInput = document.querySelector("input[type='text'][ng-if=\"oq.type == 'member_code'\"]");
-		const memberFilled = !memberInput || (memberInput.value && memberInput.value.trim() !== "");
-		// 檢查同意條款
+		// 一次查詢所有需要的元素
+		const qtyInputs = document.querySelectorAll(SELECTORS.qtyInput);
+		const memberInput = document.querySelector(SELECTORS.memberCodeInput);
 		const agreeTerms = document.getElementById("person_agree_terms");
+		
+		const qtyFilled = Array.from(qtyInputs).some(input => Number(input.value) > 0);
+		const memberFilled = !memberInput || (memberInput.value && memberInput.value.trim() !== "");
 		const agreeChecked = agreeTerms && agreeTerms.checked;
+		
 		if (qtyFilled && memberFilled && agreeChecked) {
-			const nextBtn = document.querySelector(".register-new-next-button-area button.btn-primary");
+			const nextBtn = document.querySelector(SELECTORS.nextButton);
 			if (nextBtn && !nextBtn.disabled) {
-				setTimeout(() => {
-					nextBtn.click();
-					console.log("已自動點擊下一步");
-				}, 200);
+				nextBtn.click();
 			}
 		}
 	}
 
 	function handlePage() {
-		const allStatusElements = document.querySelectorAll(".register-status");
-		const statusElements = [];
-		for (let i = 0; i < allStatusElements.length; i++) {
-			if (!allStatusElements[i].classList.contains("hide")) {
-				statusElements.push(allStatusElements[i]);
-			}
-		}
+		const allStatusElements = document.querySelectorAll(SELECTORS.registerStatus);
+		const statusElements = Array.from(allStatusElements).filter(el => !el.classList.contains("hide"));
 
 		if (shouldAutoRefresh(statusElements)) {
-			console.log("不給買，將自動重新整理頁面");
-			setTimeout(() => location.reload(), 200);
+			setTimeout(() => location.reload(), DELAYS.reload);
 			return;
 		}
 
@@ -194,95 +243,83 @@ let step = 0;
 		if (inStock) {
 			clearTicketUnits();
 
-			if (document.querySelectorAll(".ticket-unit").length === 0) {
-				console.log("所有票券均不符合條件，將自動重新整理頁面");
-				setTimeout(() => location.reload(), 200);
+			if (document.querySelectorAll(SELECTORS.ticketUnit).length === 0) {
+				setTimeout(() => location.reload(), DELAYS.reload);
 				return;
 			}
 
 			autoCheckAgreeTerms();
-			observer.disconnect();
+			observerEnabled = false;
 
 			if (step === 0) {
 				step = 1;
-				console.log("第一步：選擇票券");
 				selectTicketByKeyword();
 			}
 			autoFillMemberCode();
 			checkAndClickNext();
+			observerEnabled = true;
 		}
 	}
 
-	// 左上角倒數顯示元素
+	// 左上角倒數顯示元素 (已整合至 startCountdown)
 	function createCountdownDisplay() {
-		let el = document.getElementById("kktix-countdown-display");
+		let el = document.getElementById(SELECTORS.countdownDisplay.slice(1));
 		if (!el) {
 			el = document.createElement("div");
-			el.id = "kktix-countdown-display";
-			el.style.position = "fixed";
-			el.style.top = "10px";
-			el.style.left = "10px";
-			el.style.zIndex = "9999";
-			el.style.background = "rgba(0,0,0,0.7)";
-			el.style.color = "#fff";
-			el.style.padding = "8px 16px";
-			el.style.borderRadius = "8px";
-			el.style.fontSize = "18px";
-			el.style.fontWeight = "bold";
-			el.style.pointerEvents = "none";
-			// 不在這裡加入 document.body
+			el.id = SELECTORS.countdownDisplay.slice(1);
+			el.style.cssText = "position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
 		}
 		return el;
 	}
 
-	// 倒數邏輯
+	// 倒數邏輯 - 優化版本
 	function startCountdown() {
-		const refreshTime = new Date(config.refresh_time.replace(/-/g, "/"));
-		const now = new Date();
-		const diff = refreshTime - now;
+		const refreshTime = new Date(CUSTOM_CONFIG.refresh_time.replace(/-/g, "/"));
+		let diff = refreshTime - new Date();
 
-		// 若已經超過刷新時間，不需倒數，直接啟用 DOM 監聽
+		// 若已經超過刷新時間，直接啟用 DOM 監聽
 		if (diff <= 0) {
-			console.log("無需倒數，直接監聽 DOM 變更");
 			observerEnabled = true;
 			return;
 		}
 
-		const display = createCountdownDisplay();
-		let stopped = false;
+		let display = null;
 		let displayAppended = false;
-		const intervalId = setInterval(() => {
-			if (stopped) {
+		let lastSecond = -1;
+		let intervalId = null;
+
+		function update() {
+			diff = refreshTime - new Date();
+			if (diff <= 0) {
 				clearInterval(intervalId);
+				if (diff > -500) location.reload();
 				observerEnabled = true;
 				return;
 			}
-			update();
-		}, 500);
-		function update() {
-			console.log("倒數更新中...");
-			if (stopped) return;
-			const now = new Date();
-			const diff = refreshTime - now;
-			if (diff <= 0) {
-				stopped = true;
-				if (diff > -500) {
-					location.reload();
-				} else {
-					console.log("倒數結束");
-				}
-				return;
-			}
-			// 顯示倒數
+
+			// 僅當秒數變化時才更新 DOM
 			const h = Math.floor(diff / 3600000);
 			const m = Math.floor((diff % 3600000) / 60000);
 			const s = Math.floor((diff % 60000) / 1000);
-			display.textContent = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-			if (!displayAppended && document.body) {
-				document.body.appendChild(display);
-				displayAppended = true;
+			const currentSecond = h * 3600 + m * 60 + s;
+
+			if (currentSecond !== lastSecond) {
+				lastSecond = currentSecond;
+				if (!display) {
+					display = document.createElement("div");
+					display.id = SELECTORS.countdownDisplay.slice(1);
+					display.style.cssText = "position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
+				}
+				display.textContent = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+				if (!displayAppended && document.body) {
+					document.body.appendChild(display);
+					displayAppended = true;
+				}
 			}
 		}
+
+		intervalId = setInterval(update, DELAYS.refreshCheckInterval);
+		update();
 	}
 
 	// 初始執行一次
@@ -290,5 +327,12 @@ let step = 0;
 
 	startCountdown();
 
-	observer.observe(document.body, { childList: true, subtree: true });
+	// MutationObserver - 優化監聽範圍縮小至 ticketUnit 容器變化
+	const ticketContainer = document.querySelector(".register-form-area") || document.body;
+	observer.observe(ticketContainer, { 
+		childList: true, 
+		subtree: true,
+		characterData: false,
+		attributes: false
+	});
 })();
