@@ -48,7 +48,7 @@ let step = 0;
 	function clearTicketUnits() {
 		document.querySelectorAll(".ticket-unit").forEach((row) => {
 			const text = row.textContent;
-			if (text.includes("暫無票券") || text.includes("已售完") || text.includes("輪椅席")) {
+			if (text.includes("暫無票券") || text.includes("已售完") || text.includes("輪椅席") || text.includes("身障席")) {
 				row.remove();
 			}
 			const match = text.match(/剩\s*(\d+)\s*張/);
@@ -108,7 +108,7 @@ let step = 0;
 			// 清空舊值並填入新值
 			input.value = "";
 			input.dispatchEvent(new Event("input", { bubbles: true }));
-			
+
 			// 模擬逐字輸入以確保 Angular 框架能正確識別變化
 			const qtyStr = String(qty);
 			for (let i = 0; i < qtyStr.length; i++) {
@@ -117,11 +117,11 @@ let step = 0;
 				input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: qtyStr[i] }));
 				input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: qtyStr[i] }));
 			}
-			
+
 			// 觸發最終事件確保值已被接受
 			input.dispatchEvent(new Event("change", { bubbles: true }));
 			input.dispatchEvent(new Event("blur", { bubbles: true }));
-			
+
 			console.log("填入票券數量:", qty);
 		}
 	}
@@ -207,7 +207,7 @@ let step = 0;
 		const refreshTime = new Date(config.refresh_time.replace(/-/g, "/"));
 		const now = new Date();
 		const diff = refreshTime - now;
-		
+
 		// 若已經超過刷新時間，不需倒數，直接啟用 DOM 監聽
 		if (diff <= 0) {
 			console.log("無需倒數，直接監聽 DOM 變更");
