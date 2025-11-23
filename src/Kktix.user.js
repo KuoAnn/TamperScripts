@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.26.1123.1550
-// @description  自動票券選擇與提交，自動接受/忽略 alert 與 confirm，並於左上角顯示已自動點擊訊息 10 秒
+// @version      1.26.1123.1551
+// @description  自動票券選擇與提交，自動接受/忽略 alert 與 confirm，於左上角顯示已自動點擊訊息 10 秒，並移除 .banner-wrapper
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=kktix.com
@@ -34,6 +34,7 @@ const SELECTORS = {
 	nextButton: ".register-new-next-button-area button.btn-primary",
 	imgWrapper: ".img-wrapper",
 	footer: ".footer",
+	bannerWrapper: ".banner-wrapper",
 	countdownDisplay: "#kktix-countdown-display"
 };
 
@@ -114,14 +115,11 @@ let step = 0;
 		return false;
 	}
 
-	let pageCleared = false;
 	function clearPage() {
-		if (pageCleared) return;
-		const elements = document.querySelectorAll(SELECTORS.imgWrapper + ", " + SELECTORS.footer);
+		const elements = document.querySelectorAll(SELECTORS.imgWrapper + ", " + SELECTORS.footer + ", " + SELECTORS.bannerWrapper);
 		for (let i = 0; i < elements.length; i++) {
 			elements[i].remove();
 		}
-		pageCleared = true;
 	}
 
 	function clearTicketUnits() {
