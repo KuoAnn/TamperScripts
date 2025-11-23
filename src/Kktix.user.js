@@ -38,18 +38,32 @@ let step = 0;
 
 	function shouldAutoRefresh(statusElements) {
 		const refreshClasses = ["register-status-OUT_OF_STOCK", "register-status-REGISTRATION_CLOSED", "register-status-CLOSED"];
-		return statusElements.some((el) => refreshClasses.some((cls) => el.classList.contains(cls)));
+		for (let i = 0; i < statusElements.length; i++) {
+			const el = statusElements[i];
+			for (let j = 0; j < refreshClasses.length; j++) {
+				if (el.classList.contains(refreshClasses[j])) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	function clearPage() {
-		document.querySelectorAll(".img-wrapper, .footer").forEach((el) => el.remove());
+		const elements = document.querySelectorAll(".img-wrapper, .footer");
+		for (let i = 0; i < elements.length; i++) {
+			elements[i].remove();
+		}
 	}
 
 	function clearTicketUnits() {
-		document.querySelectorAll(".ticket-unit").forEach((row) => {
+		const rows = document.querySelectorAll(".ticket-unit");
+		for (let i = rows.length - 1; i >= 0; i--) {
+			const row = rows[i];
 			const text = row.textContent;
 			if (text.includes("暫無票券") || text.includes("已售完") || text.includes("輪椅席") || text.includes("身障席")) {
 				row.remove();
+				continue;
 			}
 			const match = text.match(/剩\s*(\d+)\s*張/);
 			if (match) {
@@ -58,7 +72,7 @@ let step = 0;
 					row.remove();
 				}
 			}
-		});
+		}
 	}
 
 	function autoCheckAgreeTerms() {
@@ -69,17 +83,23 @@ let step = 0;
 	}
 
 	function autoFillMemberCode() {
-		document.querySelectorAll("input[type='text'][ng-if=\"oq.type == 'member_code'\"]").forEach((input) => {
+		const inputs = document.querySelectorAll("input[type='text'][ng-if=\"oq.type == 'member_code'\"]");
+		for (let i = 0; i < inputs.length; i++) {
+			const input = inputs[i];
 			console.log("填入會員代碼:", config.member_code);
 			input.value = config.member_code;
 			input.dispatchEvent(new Event("input", { bubbles: true }));
-		});
+		}
 	}
 
 	function selectTicketByKeyword() {
 		const keywords = config.keyword;
 		const qty = config.qty;
-		const ticketUnits = Array.from(document.querySelectorAll(".ticket-unit"));
+		const ticketUnitNodeList = document.querySelectorAll(".ticket-unit");
+		const ticketUnits = [];
+		for (let i = 0; i < ticketUnitNodeList.length; i++) {
+			ticketUnits.push(ticketUnitNodeList[i]);
+		}
 		// 將 ticket-unit 文字內容做前處理（去除逗號、去除多餘空白）
 		const getText = (el) => el.textContent.replace(/,/g, "").replace(/\s+/g, " ").trim();
 		// 依序比對每個 keyword
@@ -90,10 +110,21 @@ let step = 0;
 				matchedUnits = ticketUnits;
 			} else {
 				const andWords = keyword.split(" ").filter(Boolean);
-				matchedUnits = ticketUnits.filter((el) => {
+				matchedUnits = [];
+				for (let k = 0; k < ticketUnits.length; k++) {
+					const el = ticketUnits[k];
 					const text = getText(el);
-					return andWords.every((word) => text.includes(word));
-				});
+					let allMatch = true;
+					for (let w = 0; w < andWords.length; w++) {
+						if (!text.includes(andWords[w])) {
+							allMatch = false;
+							break;
+						}
+					}
+					if (allMatch) {
+						matchedUnits.push(el);
+					}
+				}
 			}
 			if (matchedUnits.length > 0) break;
 		}
@@ -105,31 +136,27 @@ let step = 0;
 		// 找到 input 並填入數量
 		const input = selected.querySelector("input[type='text'][ng-model='ticketModel.quantity']");
 		if (input) {
-			// 清空舊值並填入新值
-			input.value = "";
-			input.dispatchEvent(new Event("input", { bubbles: true }));
-
-			// 模擬逐字輸入以確保 Angular 框架能正確識別變化
-			const qtyStr = String(qty);
-			for (let i = 0; i < qtyStr.length; i++) {
-				input.value += qtyStr[i];
-				input.dispatchEvent(new Event("input", { bubbles: true }));
-				input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: qtyStr[i] }));
-				input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: qtyStr[i] }));
+			// 觸發所有 Angular 事件
+			const events = ["input", "change", "blur"];
+			for (let i = 0; i < events.length; i++) {
+				input.value = qty;
+				input.dispatchEvent(new Event(events[i], { bubbles: true }));
 			}
-
-			// 觸發最終事件確保值已被接受
-			input.dispatchEvent(new Event("change", { bubbles: true }));
-			input.dispatchEvent(new Event("blur", { bubbles: true }));
-
-			console.log("填入票券數量:", qty);
+			input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "0" }));
+			input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "0" }));
 		}
 	}
 
 	function checkAndClickNext() {
 		// 檢查是否有任一票券已填寫數量
 		const qtyInputs = document.querySelectorAll("input[type='text'][ng-model='ticketModel.quantity']");
-		const qtyFilled = Array.from(qtyInputs).some((input) => Number(input.value) > 0);
+		let qtyFilled = false;
+		for (let i = 0; i < qtyInputs.length; i++) {
+			if (Number(qtyInputs[i].value) > 0) {
+				qtyFilled = true;
+				break;
+			}
+		}
 		// 檢查會員代碼（如有 input）
 		const memberInput = document.querySelector("input[type='text'][ng-if=\"oq.type == 'member_code'\"]");
 		const memberFilled = !memberInput || (memberInput.value && memberInput.value.trim() !== "");
@@ -148,7 +175,13 @@ let step = 0;
 	}
 
 	function handlePage() {
-		const statusElements = Array.from(document.querySelectorAll(".register-status")).filter((el) => !el.classList.contains("hide"));
+		const allStatusElements = document.querySelectorAll(".register-status");
+		const statusElements = [];
+		for (let i = 0; i < allStatusElements.length; i++) {
+			if (!allStatusElements[i].classList.contains("hide")) {
+				statusElements.push(allStatusElements[i]);
+			}
+		}
 
 		if (shouldAutoRefresh(statusElements)) {
 			console.log("不給買，將自動重新整理頁面");
