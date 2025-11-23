@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.26.1123.1551
-// @description  自動票券選擇與提交，自動接受/忽略 alert 與 confirm，於左上角顯示已自動點擊訊息 10 秒，並移除 .banner-wrapper
+// @version      1.26.1123.1610
+// @description  自動票券選擇提交，跨重新整理自動顯示最近10秒內自動點擊之 alert 訊息
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=kktix.com
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/Kktix.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/Kktix.user.js
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
 // ==/UserScript==
 
 /* 設定說明
@@ -51,48 +52,75 @@ let step = 0;
 
 // 自動處理原生對話框：alert/confirm
 // alert：改成僅記錄不阻塞；confirm：強制回傳 true
+
 (function overrideDialogs() {
 	const CONTAINER_ID = "kktix-dialog-log";
+	const STORE_KEY = "kktix_dialog_msgs";
+	const DISPLAY_MS = 10000;
+	function gmAvailable() { return typeof GM_getValue === "function" && typeof GM_setValue === "function"; }
+	function readStoreRaw() {
+		try {
+			if (gmAvailable()) return GM_getValue(STORE_KEY, "[]");
+			return sessionStorage.getItem(STORE_KEY) || "[]";
+		} catch (_) { return "[]"; }
+	}
+	function writeStore(arr) {
+		try {
+			const data = JSON.stringify(arr);
+			if (gmAvailable()) GM_setValue(STORE_KEY, data); else sessionStorage.setItem(STORE_KEY, data);
+		} catch (_) {}
+	}
+	function loadMessages() {
+		try { return JSON.parse(readStoreRaw()); } catch (_) { return []; }
+	}
+	function pruneAndPersist(arr) {
+		const now = Date.now();
+		const filtered = arr.filter(m => m && typeof m.expires === "number" && m.expires > now);
+		writeStore(filtered);
+		return filtered;
+	}
 	function ensureContainer() {
 		let box = document.getElementById(CONTAINER_ID);
 		if (!box) {
 			box = document.createElement("div");
 			box.id = CONTAINER_ID;
-			box.style.cssText = "position:fixed;top:56px;left:10px;z-index:10000;display:flex;flex-direction:column;gap:6px;max-width:320px;font-size:14px";
-			document.body && document.body.appendChild(box);
+			box.style.cssText = "position:fixed;top:56px;left:10px;z-index:10000;display:flex;flex-direction:column;gap:6px;max-width:360px;font-size:14px";
+			if (document.body) document.body.appendChild(box); else document.addEventListener("DOMContentLoaded", () => document.body.appendChild(box));
 		}
 		return box;
 	}
-	function pushMessage(raw, type) {
+	function renderMessage(obj) {
 		const box = ensureContainer();
 		const wrap = document.createElement("div");
-		wrap.style.cssText = "background:rgba(0,0,0,.75);color:#fff;padding:6px 10px;border-radius:6px;line-height:1.4;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.15);word-break:break-all";
-		const label = type === "confirm" ? "confirm" : "alert";
-		wrap.textContent = `已自動點擊 ${label}: ${String(raw)}`;
+		wrap.style.cssText = "background:rgba(0,0,0,.78);color:#fff;padding:6px 10px;border-radius:6px;line-height:1.4;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.15);word-break:break-all";
+		wrap.textContent = `已自動點擊 alert: ${obj.text}`;
 		box.appendChild(wrap);
-		setTimeout(() => { wrap.remove(); if (box.children.length === 0) box.remove(); }, 10000);
+		const remaining = obj.expires - Date.now();
+		setTimeout(() => { wrap.remove(); if (box.children.length === 0) box.remove(); }, Math.max(0, remaining));
+	}
+	function pushMessage(raw) {
+		const now = Date.now();
+		const arr = pruneAndPersist(loadMessages());
+		const item = { text: String(raw), type: "alert", expires: now + DISPLAY_MS };
+		arr.push(item);
+		writeStore(arr);
+		renderMessage(item);
+	}
+	function restoreMessages() {
+		const arr = pruneAndPersist(loadMessages()).filter(m => m.type === "alert");
+		if (!arr.length) return;
+		arr.forEach(renderMessage);
 	}
 	try {
 		const originalAlert = window.alert;
-		const originalConfirm = window.confirm;
-		window.alert = function (msg) {
-			console.log("[AutoAlert suppressed]", msg);
-			pushMessage(msg, "alert");
-		};
-		window.confirm = function (msg) {
-			console.log("[AutoConfirm accepted]", msg);
-			pushMessage(msg, "confirm");
-			return true;
-		};
+		window.alert = function (msg) { console.log("[AutoAlert suppressed]", msg); pushMessage(msg); };
+		// 保留原 confirm
+		window.confirm = originalAlert ? window.confirm : window.confirm;
 		for (let i = 0; i < window.frames.length; i++) {
-			try {
-				window.frames[i].alert = window.alert;
-				window.frames[i].confirm = window.confirm;
-			} catch (_) {}
+			try { window.frames[i].alert = window.alert; } catch (_) {}
 		}
-	} catch (e) {
-		console.log("[Dialog override failed]", e);
-	}
+		restoreMessages();
+	} catch (e) { console.log("[Dialog override failed]", e); }
 })();
 (function () {
 	("use strict");
