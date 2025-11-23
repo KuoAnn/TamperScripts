@@ -65,7 +65,36 @@ const SELECTORS = {
 	footer: ".footer",
 	bannerWrapper: ".banner-wrapper",
 	countdownDisplay: "#kktix-countdown-display",
+	leftTopContainer: "#kktix-left-notify-container",
 };
+
+function ensureLeftTopContainer() {
+	let container = document.getElementById(SELECTORS.leftTopContainer.slice(1));
+	if (!container) {
+		container = document.createElement("div");
+		container.id = SELECTORS.leftTopContainer.slice(1);
+		container.style.cssText =
+			"position:fixed;top:10px;left:10px;z-index:10000;display:flex;flex-direction:column;gap:8px;max-width:360px;font-size:14px;pointer-events:none;";
+		document.body && document.body.appendChild(container);
+	}
+	return container;
+}
+
+// Notification style variants
+const NOTIFY_VARIANTS = {
+	success: { bg: "rgba(0,150,0,0.85)", color: "#fff" },
+	warning: { bg: "rgba(255,170,0,0.95)", color: "#111" },
+	error: { bg: "rgba(200,40,40,0.95)", color: "#fff" },
+	info: { bg: "rgba(0,0,0,0.75)", color: "#fff" },
+};
+
+function createNotificationElement(message, variant = "info") {
+	const el = document.createElement("div");
+	const v = NOTIFY_VARIANTS[variant] || NOTIFY_VARIANTS.info;
+	el.textContent = message;
+	el.style.cssText = `background:${v.bg};color:${v.color};padding:8px 14px;border-radius:8px;font-size:14px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,0.2);pointer-events:auto;`;
+	return el;
+}
 
 const DELAYS = {
 	actionClick: 0,
@@ -82,25 +111,11 @@ let step = 0;
 // 自動處理原生對話框：alert
 // alert：改成僅記錄不阻塞
 (function overrideDialogs() {
-	const CONTAINER_ID = "kktix-dialog-log";
-	function ensureContainer() {
-		let box = document.getElementById(CONTAINER_ID);
-		if (!box) {
-			box = document.createElement("div");
-			box.id = CONTAINER_ID;
-			box.style.cssText =
-				"position:fixed;top:56px;left:10px;z-index:10000;display:flex;flex-direction:column;gap:6px;max-width:320px;font-size:14px";
-			document.body && document.body.appendChild(box);
-		}
-		return box;
-	}
-	function pushMessage(raw, type) {
-		const box = ensureContainer();
-		const wrap = document.createElement("div");
-		wrap.style.cssText =
-			"background:rgba(0,0,0,.75);color:#fff;padding:6px 10px;border-radius:6px;line-height:1.4;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.15);word-break:break-all";
-		const label = type === "confirm" ? "confirm" : "alert";
-		wrap.textContent = `已自動點擊 ${label}: ${String(raw)}`;
+	function pushMessage(raw, type = "info") {
+		const box = ensureLeftTopContainer();
+		const label = type === "confirm" ? "confirm" : type;
+		const message = `已自動點擊 ${label}: ${String(raw)}`;
+		const wrap = createNotificationElement(message, type === "confirm" ? "success" : (type || "info"));
 		console.log("[AutoAlert]", raw);
 		box.appendChild(wrap);
 		setTimeout(() => {
@@ -112,7 +127,7 @@ let step = 0;
 		const originalAlert = window.alert;
 		window.alert = function (msg) {
 			console.log("[AutoAlert suppressed]", msg);
-			pushMessage(msg, "alert");
+			pushMessage(msg, "warning");
 		};
 		for (let i = 0; i < window.frames.length; i++) {
 			try {
@@ -127,31 +142,46 @@ let step = 0;
 // ===== 提示音播放功能 =====
 function playNotificationSound() {
 	const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-	const oscillator = audioContext.createOscillator();
-	const gainNode = audioContext.createGain();
+	const frequency = 1000;
 
-	oscillator.connect(gainNode);
-	gainNode.connect(audioContext.destination);
+	function playTone(startTime, duration) {
+		const osc = audioContext.createOscillator();
+		const gain = audioContext.createGain();
 
-	oscillator.frequency.value = 800;
-	oscillator.type = "sine";
-	gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-	gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+		osc.connect(gain);
+		gain.connect(audioContext.destination);
 
-	oscillator.start(audioContext.currentTime);
-	oscillator.stop(audioContext.currentTime + 0.5);
+		osc.frequency.value = frequency;
+		osc.type = "sine";
+		gain.gain.setValueAtTime(0.4, startTime);
+		gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
 
-	console.log("[提示音] 已播放訂單確認提示音");
+		osc.start(startTime);
+		osc.stop(startTime + duration);
+	}
+
+	const now = audioContext.currentTime;
+	const longDuration = 0.6;
+	const shortDuration = 0.2;
+	const gap = 0.1;
+
+	// 一長兩短：長(0.6秒) + 間隔(0.1秒) + 短(0.2秒) + 間隔(0.1秒) + 短(0.2秒)
+	playTone(now, longDuration);
+	playTone(now + longDuration + gap, shortDuration);
+	playTone(now + longDuration + gap + shortDuration + gap, shortDuration);
+
+	console.log("[提示音] 已播放訂單確認提示音（一長兩短）");
 }
 
 // ===== 設定彈窗功能 =====
-function showNotification(message) {
-	const notify = document.createElement("div");
-	notify.textContent = message;
-	notify.style.cssText =
-		"position:fixed;top:10px;left:10px;z-index:10001;background:rgba(0,150,0,0.85);color:#fff;padding:10px 20px;border-radius:8px;font-size:16px;font-weight:bold;box-shadow:0 2px 10px rgba(0,0,0,0.3);";
-	document.body.appendChild(notify);
-	setTimeout(() => notify.remove(), 6000);
+function showNotification(message, type = "success") {
+	const container = ensureLeftTopContainer();
+	const notify = createNotificationElement(message, type);
+	container.appendChild(notify);
+	setTimeout(() => {
+		notify.remove();
+		if (container.children.length === 0) container.remove();
+	}, 6000);
 }
 
 function createConfigDialog() {
@@ -237,7 +267,8 @@ function createConfigDialog() {
 		saveConfig(newConfig);
 		Object.assign(CUSTOM_CONFIG, newConfig);
 		overlay.remove();
-		showNotification("更新完成");
+		showNotification("更新完成，3 秒後重新整理", "success");
+		setTimeout(() => location.reload(), 3000);
 	});
 
 	form.querySelector("#cfg-cancel").addEventListener("click", () => overlay.remove());
@@ -427,7 +458,7 @@ if (location.pathname.includes("/registrations/new")) {
 				el = document.createElement("div");
 				el.id = SELECTORS.countdownDisplay.slice(1);
 				el.style.cssText =
-					"position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
+					"background:rgba(0,0,0,0.7);color:#fff;padding:8px 14px;border-radius:8px;font-size:14px;font-weight:bold;pointer-events:none;";
 			}
 			return el;
 		}
@@ -466,14 +497,12 @@ if (location.pathname.includes("/registrations/new")) {
 				if (currentSecond !== lastSecond) {
 					lastSecond = currentSecond;
 					if (!display) {
-						display = document.createElement("div");
-						display.id = SELECTORS.countdownDisplay.slice(1);
-						display.style.cssText =
-							"position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
+						display = createCountdownDisplay();
 					}
 					display.textContent = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-					if (!displayAppended && document.body) {
-						document.body.appendChild(display);
+					if (!displayAppended) {
+						const container = ensureLeftTopContainer();
+						container.insertBefore(display, container.firstChild);
 						displayAppended = true;
 					}
 				}
