@@ -71,11 +71,12 @@ let step = 0;
 			"background:rgba(0,0,0,.75);color:#fff;padding:6px 10px;border-radius:6px;line-height:1.4;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.15);word-break:break-all";
 		const label = type === "confirm" ? "confirm" : "alert";
 		wrap.textContent = `已自動點擊 ${label}: ${String(raw)}`;
+		console.log("[AutoAlert]", raw);
 		box.appendChild(wrap);
 		setTimeout(() => {
 			wrap.remove();
 			if (box.children.length === 0) box.remove();
-		}, 10000);
+		}, 6000);
 	}
 	try {
 		const originalAlert = window.alert;
