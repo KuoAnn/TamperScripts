@@ -1,15 +1,14 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.26.1123.1610
-// @description  自動票券選擇提交，跨重新整理自動顯示最近10秒內自動點擊之 alert 訊息
+// @version      1.26.1123.1600
+// @description  自動票券選擇與提交，忽略 alert 並於左上角顯示已自動點擊訊息 10 秒，移除 .banner-wrapper
 // @author       You
 // @match        https://kktix.com/events/*/registrations/new
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=kktix.com
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/Kktix.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/Kktix.user.js
-// @grant        GM_setValue
-// @grant        GM_getValue
+// @grant        none
 // ==/UserScript==
 
 /* 設定說明
@@ -36,12 +35,12 @@ const SELECTORS = {
 	imgWrapper: ".img-wrapper",
 	footer: ".footer",
 	bannerWrapper: ".banner-wrapper",
-	countdownDisplay: "#kktix-countdown-display"
+	countdownDisplay: "#kktix-countdown-display",
 };
 
 const DELAYS = {
 	actionClick: 0,
-	reload: 50
+	reload: 50,
 };
 
 const REFRESH_CLASSES = new Set(["register-status-OUT_OF_STOCK", "register-status-REGISTRATION_CLOSED", "register-status-CLOSED"]);
@@ -50,77 +49,48 @@ const REMAIN_TICKETS_REGEX = /剩\s*(\d+)\s*張/;
 
 let step = 0;
 
-// 自動處理原生對話框：alert/confirm
-// alert：改成僅記錄不阻塞；confirm：強制回傳 true
-
+// 自動處理原生對話框：alert
+// alert：改成僅記錄不阻塞
 (function overrideDialogs() {
 	const CONTAINER_ID = "kktix-dialog-log";
-	const STORE_KEY = "kktix_dialog_msgs";
-	const DISPLAY_MS = 10000;
-	function gmAvailable() { return typeof GM_getValue === "function" && typeof GM_setValue === "function"; }
-	function readStoreRaw() {
-		try {
-			if (gmAvailable()) return GM_getValue(STORE_KEY, "[]");
-			return sessionStorage.getItem(STORE_KEY) || "[]";
-		} catch (_) { return "[]"; }
-	}
-	function writeStore(arr) {
-		try {
-			const data = JSON.stringify(arr);
-			if (gmAvailable()) GM_setValue(STORE_KEY, data); else sessionStorage.setItem(STORE_KEY, data);
-		} catch (_) {}
-	}
-	function loadMessages() {
-		try { return JSON.parse(readStoreRaw()); } catch (_) { return []; }
-	}
-	function pruneAndPersist(arr) {
-		const now = Date.now();
-		const filtered = arr.filter(m => m && typeof m.expires === "number" && m.expires > now);
-		writeStore(filtered);
-		return filtered;
-	}
 	function ensureContainer() {
 		let box = document.getElementById(CONTAINER_ID);
 		if (!box) {
 			box = document.createElement("div");
 			box.id = CONTAINER_ID;
-			box.style.cssText = "position:fixed;top:56px;left:10px;z-index:10000;display:flex;flex-direction:column;gap:6px;max-width:360px;font-size:14px";
-			if (document.body) document.body.appendChild(box); else document.addEventListener("DOMContentLoaded", () => document.body.appendChild(box));
+			box.style.cssText =
+				"position:fixed;top:56px;left:10px;z-index:10000;display:flex;flex-direction:column;gap:6px;max-width:320px;font-size:14px";
+			document.body && document.body.appendChild(box);
 		}
 		return box;
 	}
-	function renderMessage(obj) {
+	function pushMessage(raw, type) {
 		const box = ensureContainer();
 		const wrap = document.createElement("div");
-		wrap.style.cssText = "background:rgba(0,0,0,.78);color:#fff;padding:6px 10px;border-radius:6px;line-height:1.4;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.15);word-break:break-all";
-		wrap.textContent = `已自動點擊 alert: ${obj.text}`;
+		wrap.style.cssText =
+			"background:rgba(0,0,0,.75);color:#fff;padding:6px 10px;border-radius:6px;line-height:1.4;font-weight:600;box-shadow:0 0 0 1px rgba(255,255,255,.15);word-break:break-all";
+		const label = type === "confirm" ? "confirm" : "alert";
+		wrap.textContent = `已自動點擊 ${label}: ${String(raw)}`;
 		box.appendChild(wrap);
-		const remaining = obj.expires - Date.now();
-		setTimeout(() => { wrap.remove(); if (box.children.length === 0) box.remove(); }, Math.max(0, remaining));
-	}
-	function pushMessage(raw) {
-		const now = Date.now();
-		const arr = pruneAndPersist(loadMessages());
-		const item = { text: String(raw), type: "alert", expires: now + DISPLAY_MS };
-		arr.push(item);
-		writeStore(arr);
-		renderMessage(item);
-	}
-	function restoreMessages() {
-		const arr = pruneAndPersist(loadMessages()).filter(m => m.type === "alert");
-		if (!arr.length) return;
-		arr.forEach(renderMessage);
+		setTimeout(() => {
+			wrap.remove();
+			if (box.children.length === 0) box.remove();
+		}, 10000);
 	}
 	try {
 		const originalAlert = window.alert;
-		window.alert = function (msg) { console.log("[AutoAlert suppressed]", msg); pushMessage(msg); };
-		// 保留原 confirm
-		window.confirm = originalAlert ? window.confirm : window.confirm;
+		window.alert = function (msg) {
+			console.log("[AutoAlert suppressed]", msg);
+			pushMessage(msg, "alert");
+		};
 		for (let i = 0; i < window.frames.length; i++) {
-			try { window.frames[i].alert = window.alert; } catch (_) {}
+			try {
+				window.frames[i].alert = window.alert;
+			} catch (_) {}
 		}
-		restoreMessages();
-	} catch (e) { console.log("[Dialog override failed]", e); }
+	} catch (e) {
+		console.log("[Dialog override failed]", e);
+	}
 })();
 (function () {
 	("use strict");
@@ -194,17 +164,17 @@ let step = 0;
 		const ticketUnitNodeList = document.querySelectorAll(SELECTORS.ticketUnit);
 		const ticketUnits = Array.from(ticketUnitNodeList);
 		if (ticketUnits.length === 0) return;
-		
+
 		const keywords = CUSTOM_CONFIG.keyword;
 		const qty = CUSTOM_CONFIG.qty;
-		
+
 		// 預計算所有票券文本一次，使用 Map 緩存
 		const textCache = new Map();
 		const cleanText = (text) => text.replace(/,/g, "").replace(/\s+/g, " ").trim();
-		ticketUnits.forEach(el => {
+		ticketUnits.forEach((el) => {
 			textCache.set(el, cleanText(el.textContent));
 		});
-		
+
 		// 依序比對關鍵字一次找到符合的票券
 		let matchedUnits = [];
 		for (let i = 0; i < keywords.length; i++) {
@@ -213,22 +183,22 @@ let step = 0;
 				matchedUnits = ticketUnits;
 				break;
 			}
-			
+
 			const andWords = keyword.split(" ").filter(Boolean);
-			matchedUnits = ticketUnits.filter(el => {
+			matchedUnits = ticketUnits.filter((el) => {
 				const text = textCache.get(el);
-				return andWords.every(word => text.includes(word));
+				return andWords.every((word) => text.includes(word));
 			});
-			
+
 			if (matchedUnits.length > 0) break;
 		}
-		
+
 		if (matchedUnits.length === 0) return;
-		
+
 		// 隨機選一個
 		const selected = matchedUnits[Math.floor(Math.random() * matchedUnits.length)];
 		selected.style.backgroundColor = "yellow";
-		
+
 		// 找到 input 並填入數量，儘設 input 一次
 		const input = selected.querySelector(SELECTORS.qtyInput);
 		if (input && input.value !== qty.toString()) {
@@ -242,11 +212,11 @@ let step = 0;
 		const qtyInputs = document.querySelectorAll(SELECTORS.qtyInput);
 		const memberInput = document.querySelector(SELECTORS.memberCodeInput);
 		const agreeTerms = document.getElementById("person_agree_terms");
-		
-		const qtyFilled = Array.from(qtyInputs).some(input => Number(input.value) > 0);
+
+		const qtyFilled = Array.from(qtyInputs).some((input) => Number(input.value) > 0);
 		const memberFilled = !memberInput || (memberInput.value && memberInput.value.trim() !== "");
 		const agreeChecked = agreeTerms && agreeTerms.checked;
-		
+
 		if (qtyFilled && memberFilled && agreeChecked) {
 			const nextBtn = document.querySelector(SELECTORS.nextButton);
 			if (nextBtn && !nextBtn.disabled) {
@@ -257,7 +227,7 @@ let step = 0;
 
 	function handlePage() {
 		const allStatusElements = document.querySelectorAll(SELECTORS.registerStatus);
-		const statusElements = Array.from(allStatusElements).filter(el => !el.classList.contains("hide"));
+		const statusElements = Array.from(allStatusElements).filter((el) => !el.classList.contains("hide"));
 
 		if (shouldAutoRefresh(statusElements)) {
 			setTimeout(() => location.reload(), DELAYS.reload);
@@ -293,7 +263,8 @@ let step = 0;
 		if (!el) {
 			el = document.createElement("div");
 			el.id = SELECTORS.countdownDisplay.slice(1);
-			el.style.cssText = "position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
+			el.style.cssText =
+				"position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
 		}
 		return el;
 	}
@@ -334,7 +305,8 @@ let step = 0;
 				if (!display) {
 					display = document.createElement("div");
 					display.id = SELECTORS.countdownDisplay.slice(1);
-					display.style.cssText = "position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
+					display.style.cssText =
+						"position:fixed;top:10px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;pointer-events:none;";
 				}
 				display.textContent = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 				if (!displayAppended && document.body) {
@@ -355,10 +327,10 @@ let step = 0;
 
 	// MutationObserver - 優化監聽範圍縮小至 ticketUnit 容器變化
 	const ticketContainer = document.querySelector(".register-form-area") || document.body;
-	observer.observe(ticketContainer, { 
-		childList: true, 
+	observer.observe(ticketContainer, {
+		childList: true,
 		subtree: true,
 		characterData: false,
-		attributes: false
+		attributes: false,
 	});
 })();
