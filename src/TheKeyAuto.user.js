@@ -358,6 +358,7 @@
 		const currentSheetId = await GM_getValue("google_sheet_id", "");
 		const currentServiceEmail = await GM_getValue("google_service_account_email", "");
 		const currentPrivateKey = await GM_getValue("google_service_account_private_key", "");
+		const currentFuzzyUsers = await GM_getValue("fuzzy_search_usernames", "蔡嘉如,lulu");
 
 		// 建立 modal
 		const modal = document.createElement("div");
@@ -379,6 +380,10 @@
 				<div class="settings-form-group">
 					<label for="settings-sheet-id">Google Sheet ID</label>
 					<input type="text" id="settings-sheet-id" value="${currentSheetId}" placeholder="請輸入 Google Sheet ID">
+				</div>
+				<div class="settings-form-group">
+					<label for="settings-fuzzy-users">啟用模糊搜尋使用者 (以逗號分隔)</label>
+					<input type="text" id="settings-fuzzy-users" value="${currentFuzzyUsers}" placeholder="例如: 蔡嘉如,lulu (不計大小寫)">
 				</div>
 				<div class="settings-form-group">
 					<label for="settings-service-email">Service Account Email</label>
@@ -425,6 +430,7 @@
 			const sheetId = modal.querySelector("#settings-sheet-id").value.trim();
 			const serviceEmail = modal.querySelector("#settings-service-email").value.trim();
 			const privateKey = modal.querySelector("#settings-private-key").value.trim();
+			const fuzzyUsers = modal.querySelector("#settings-fuzzy-users").value.trim();
 
 			// 基本驗證 (帳號密碼必填)
 			if (!email || !password) {
@@ -440,6 +446,8 @@
 			await GM_setValue("google_sheet_id", sheetId);
 			await GM_setValue("google_service_account_email", serviceEmail);
 			await GM_setValue("google_service_account_private_key", privateKey);
+			// 儲存模糊搜尋啟用使用者 (支援多筆 , 隔開)
+			await GM_setValue("fuzzy_search_usernames", fuzzyUsers);
 
 			// 如果有更新 Google Sheets 設定，清除快取
 			if (sheetId || serviceEmail || privateKey) {
@@ -1620,14 +1628,18 @@
 	 * @param {string} targetName 目標姓名
 	 * @returns {boolean} 是否為目標使用者
 	 */
-	function isTargetUser(targetName) {
+	function isTargetUser(targetNames) {
 		const userNameElement = document.querySelector("#notifications-dropdown-toggle .navbar_staff_name");
 		if (!userNameElement) return false;
 
 		const userName = userNameElement.textContent.trim();
 		console.log(`當前使用者: ${userName}`);
 
-		return userName === targetName;
+		const normalizedUserName = userName.toLowerCase();
+		if (Array.isArray(targetNames)) {
+			return targetNames.some((t) => (t || '').toString().toLowerCase() === normalizedUserName);
+		}
+		return (targetNames || '').toString().toLowerCase() === normalizedUserName;
 	}
 
 	/**
@@ -1699,14 +1711,22 @@
 
 		addQuickLocationButtons();
 
-		// 檢查使用者身份，若為蔡嘉如則啟動模糊搜尋功能
+		// 檢查使用者身份，若為設定的目標使用者則啟動模糊搜尋功能 (支援多筆，以逗號分隔，不計大小寫)
 		waitForElement("#notifications-dropdown-toggle", () => {
-			if (isTargetUser("蔡嘉如")) {
-				console.log("偵測到目標使用者，啟動模糊搜尋功能");
-				initMemberSearchFuzzySearch();
-			} else {
-				console.log("非目標使用者，不啟動模糊搜尋功能");
-			}
+			(async () => {
+				try {
+					const raw = (await GM_getValue("fuzzy_search_usernames", "蔡嘉如,lulu")) || "";
+					const targets = raw.split(",").map((s) => s.trim()).filter(Boolean);
+					if (targets.length > 0 && isTargetUser(targets)) {
+						console.log("偵測到目標使用者，啟動模糊搜尋功能");
+						initMemberSearchFuzzySearch();
+					} else {
+						console.log("非目標使用者，不啟動模糊搜尋功能");
+					}
+				} catch (err) {
+					console.error("檢查目標使用者失敗:", err);
+				}
+			})();
 		});
 	})();
 })();
