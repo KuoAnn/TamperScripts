@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Baozi Comic Reader
 // @namespace    http://tampermonkey.net/
-// @version      1.4.4
+// @version      1.4.5
 // @description  漫畫增強閱讀器：支援 twmanga、baozimh、colamanga 三站點，提供簡化介面、智能閱讀紀錄管理、多種快捷操作、自動翻頁功能
 // @author       KuoAnn
 // @match        https://www.twmanga.com/comic/chapter/*
+// @match		 https://www.twbzmg.com/comic/chapter/*
 // @match        https://www.baozimh.com/comic/*
 // @match        https://www.colamanga.com/manga-*/*/*.html
 // @icon         https://www.google.com/s2/favicons?sz=16&domain=twmanga.com
@@ -78,7 +79,7 @@
 	// ---------------------------------------------------------------------------
 	// Interstitial Fade Removal (global) — only for twmanga
 	// ---------------------------------------------------------------------------
-	const INTERSTITIAL_MONITOR_HOSTS = new Set(["www.twmanga.com"]);
+	const INTERSTITIAL_MONITOR_HOSTS = new Set(["www.twmanga.com", "www.twbzmg.com"]);
 	const INTERSTITIAL_TARGETS = [
 		{ selector: "#interstitial_fade", message: "已移除遮罩 (#interstitial_fade)", resetOverflow: true },
 		{ selector: "#baoziAdPopup", message: "已移除廣告 (#baoziAdPopup)" },
@@ -571,10 +572,16 @@
 			return;
 		}
 
+		// 限制顯示長度最多 26 字，超過加 ...
+		let displayMsg = message;
+		if (typeof displayMsg === "string" && displayMsg.length > 26) {
+			displayMsg = displayMsg.slice(0, 26) + "...";
+		}
+
 		try {
 			const msg = GM_addElement(alertDiv, "div", {
 				class: "alertMessage",
-				textContent: message,
+				textContent: displayMsg,
 			});
 
 			alertQueue.push(msg);
@@ -1197,7 +1204,7 @@
 			// 根據站點執行對應邏輯
 			const hostname = window.location.hostname;
 
-			if (hostname === "www.twmanga.com") {
+			if (hostname === "www.twmanga.com" || hostname === "twmanga.com" || hostname === "www.twbzmg.com" || hostname === "twbzmg.com") {
 				handleTwmanga();
 			} else if (hostname === "www.baozimh.com") {
 				handleBaozimh();
