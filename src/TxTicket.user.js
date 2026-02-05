@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TxTicket
 // @namespace    http://tampermonkey.net/
-// @version      1.3.4
+// @version      1.3.5
 // @description  強化UI/勾選同意條款/銀行辨識/選取購票/點選立即購票/選擇付款方式/alt+↓=切換日期/Enter送出/關閉提醒/移除廣告/執行倒數/控制面板設定/進階設定固定預設值/場次空值視為隨機/儲存時逗號檢查/絕對時間設定/UI位置優化左下角/控制台增加文字顯示/設定面板優化寬度和滾動條/自動模式倒數計時啟動/關閉面板時檢查未儲存變更/設定面板遮罩效果
 // @author       KuoAnn
 // @match        https://tixcraft.com/*
@@ -512,7 +512,7 @@
         async preheatOCR() {
             const now = Date.now();
             if (now - this.lastPreheatTime < CONFIG.OCR_PREHEAT_INTERVAL) {
-                console.log("OCR 無需預熱");
+                console.log("[OCR] preheatOCR - OCR 無需預熱 (間隔未到)");
                 return;
             }
 
@@ -525,15 +525,29 @@
             try {
                 appState.setFlag("isGetCaptcha", false);
                 await this.getCaptcha(CONFIG.OCR_API_URL, testImageData);
-                console.log("OCR 預熱完成");
+                console.log("[OCR] preheatOCR - ✓ OCR 預熱完成");
             } catch (error) {
-                console.error("OCR 預熱失敗:", error);
+                console.error("[OCR] preheatOCR - ✗ OCR 預熱失敗:", error);
             }
         }
 
         extractImageFromCanvas() {
             const img = DOMUtils.$("#TicketForm_verifyCode-image");
-            if (!img) return "";
+            
+            if (!img) {
+                console.warn("[OCR] 圖片元素不存在 - #TicketForm_verifyCode-image");
+                return "";
+            }
+            
+            if (!img.complete) {
+                console.warn("[OCR] 圖片還未加載完成 (complete=false)");
+                return "";
+            }
+
+            if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+                console.warn("[OCR] 圖片尺寸無效 - width:", img.naturalWidth, "height:", img.naturalHeight);
+                return "";
+            }
 
             try {
                 const canvas = document.createElement("canvas");
@@ -542,27 +556,76 @@
                 canvas.width = img.naturalWidth;
                 context.drawImage(img, 0, 0);
                 const imageData = canvas.toDataURL();
-                return imageData ? imageData.split(",")[1] : "";
+                
+                if (!imageData) {
+                    console.error("[OCR] canvas.toDataURL() 返回空值");
+                    return "";
+                }
+
+                const base64Data = imageData.split(",")[1];
+                console.log("[OCR] Base64 數據提取成功，長度:", base64Data ? base64Data.length : 0);
+                return base64Data || "";
             } catch (error) {
-                console.error("提取圖片數據失敗:", error);
+                console.error("[OCR] 提取圖片數據失敗:", error);
                 return "";
             }
         }
 
-        async processCaptcha() {
+        async processCaptcha(startTime = null, delayMs = 100) {
+            // 初始化開始時間
+            if (startTime === null) {
+                startTime = Date.now();
+                console.log("[OCR] processCaptcha - 開始處理驗證碼，超時時間限制: 10秒");
+            }
+
+            const elapsedMs = Date.now() - startTime;
+            const maxWaitMs = 10000; // 10 秒超時
+            const currentAttempt = Math.floor(elapsedMs / 100) + 1;
+
+            console.log("[OCR] processCaptcha - 嘗試 #" + currentAttempt + " (已耗時: " + elapsedMs + "ms)");
+            
             const imageData = this.extractImageFromCanvas();
-            if (!imageData) return;
+            
+            if (!imageData) {
+                // 檢查是否是因為圖片未加載
+                const img = DOMUtils.$("#TicketForm_verifyCode-image");
+                if (img && !img.complete && elapsedMs < maxWaitMs) {
+                    const nextDelay = Math.min(delayMs + 100, 300); // 每次增加 100ms，最多 300ms
+                    console.warn("[OCR] 圖片未加載完成，將在 " + nextDelay + "ms 後重試 (剩餘時間: " + (maxWaitMs - elapsedMs) + "ms)");
+                    // 等待圖片加載完成後重試
+                    setTimeout(() => {
+                        this.processCaptcha(startTime, nextDelay);
+                    }, nextDelay);
+                    return;
+                }
+                
+                if (elapsedMs >= maxWaitMs) {
+                    console.error("[OCR] 已超過 10 秒超時時間，放棄 OCR 處理");
+                } else {
+                    console.warn("[OCR] 無法提取圖片數據，放棄 OCR 處理");
+                }
+                // 重置標志位，允許下次重試
+                appState.setFlag("isOcr", false);
+                return;
+            }
 
             try {
                 appState.setFlag("isGetCaptcha", false);
                 await this.getCaptcha(CONFIG.OCR_API_URL, imageData);
             } catch (error) {
-                console.error("處理驗證碼失敗:", error);
+                console.error("[OCR] 處理驗證碼失敗:", error);
+                // 失敗時重置標志位，允許下次重試
+                appState.setFlag("isOcr", false);
             }
         }
 
         async getCaptcha(url, imageData) {
-            if (this.isProcessing) return;
+            if (this.isProcessing) {
+                console.warn("[OCR] OCR 已在處理中，跳過本次請求");
+                return;
+            }
+            
+            console.log("[OCR] getCaptcha - 發送 OCR 請求到:", url);
             this.isProcessing = true;
 
             return new Promise((resolve, reject) => {
@@ -575,12 +638,13 @@
                     data: JSON.stringify({ image_data: imageData }),
                     onload: (response) => {
                         this.isProcessing = false;
+                        console.log("[OCR] 收到 OCR 回應，狀態碼:", response.status);
                         this._handleCaptchaResponse(url, response);
                         resolve(response);
                     },
                     onerror: (error) => {
                         this.isProcessing = false;
-                        console.error(`${url} 請求失敗:`, error);
+                        console.error("[OCR] OCR API 請求失敗:", url, error);
                         reject(error);
                     },
                 });
@@ -588,7 +652,7 @@
         }
 
         _handleCaptchaResponse(url, response) {
-            console.log(`${url} 回應:`, response.responseText);
+            console.log("[OCR] 回應內容:", response.responseText);
             appState.setFlag("isOcr", false);
 
             if (response.status === 200) {
@@ -599,21 +663,25 @@
                     if (answer && answer.length === 4) {
                         if (!appState.getFlag("isGetCaptcha")) {
                             appState.setFlag("isGetCaptcha", true);
-                            console.log(`${url} 識別結果: ${answer}`);
+                            console.log("[OCR] ✓ 識別成功:", answer);
                             this._fillCaptchaInput(answer);
                         } else {
-                            console.log(`${url} 結果未使用: ${answer}`);
+                            console.log("[OCR] 結果未使用 (已有驗證碼):", answer);
                         }
                     } else if (!appState.getFlag("isGetCaptcha")) {
                         appState.setFlag("isGetCaptcha", true);
-                        console.log(`${url} 重試識別`);
+                        console.log("[OCR] ⚠️ 識別格式錯誤，觸發重新整理驗證碼");
                         this._refreshCaptcha(url);
                     }
                 } catch (error) {
-                    console.error("解析 OCR 回應失敗:", error);
+                    console.error("[OCR] 解析 OCR 回應失敗:", error);
+                    // 解析失敗時重置標志位，允許重試
+                    appState.setFlag("isOcr", false);
                 }
             } else {
-                console.error(`${url} HTTP 錯誤:`, response.statusText, response.responseText);
+                console.error("[OCR] HTTP 錯誤 - 狀態碼:", response.status, "錯誤:", response.statusText, "內容:", response.responseText);
+                // HTTP 錯誤時也重置標志位
+                appState.setFlag("isOcr", false);
             }
         }
 
@@ -624,32 +692,41 @@
                 input.focus();
                 // 觸發 input 事件以確保頁面能正確處理
                 input.dispatchEvent(new Event("input", { bubbles: true }));
+            } else {
+                console.error("[OCR] 找不到驗證碼輸入框 - #TicketForm_verifyCode");
             }
         }
 
         _refreshCaptcha(url) {
             const imgCaptcha = DOMUtils.$("#TicketForm_verifyCode-image");
-            if (!imgCaptcha) return;
+            if (!imgCaptcha) {
+                console.error("[OCR] _refreshCaptcha - 找不到驗證碼圖片元素");
+                return;
+            }
 
+            console.log("[OCR] _refreshCaptcha - 觸發驗證碼刷新");
             imgCaptcha.click();
             const originalSrc = imgCaptcha.src;
+            let refreshTimeout = false;
 
             const checkInterval = setInterval(() => {
                 if (originalSrc !== imgCaptcha.src) {
                     clearInterval(checkInterval);
-                    console.log("驗證碼已刷新:", imgCaptcha.src);
-
-                    const newImageData = this.extractImageFromCanvas();
-                    if (newImageData) {
-                        appState.setFlag("isGetCaptcha", false);
-                        this.getCaptcha(url, newImageData);
-                    }
+                    console.log("[OCR] _refreshCaptcha - 驗證碼圖片已更新，重新啟動 OCR 驗證碼識別");
+                    
+                    // 使用 processCaptcha 的重試機制，等待新圖片加載完成並發送 OCR
+                    appState.setFlag("isGetCaptcha", false);
+                    this.processCaptcha();
                 }
             }, 100);
 
             // 防止無限等待
             setTimeout(() => {
-                clearInterval(checkInterval);
+                if (!refreshTimeout) {
+                    refreshTimeout = true;
+                    clearInterval(checkInterval);
+                    console.warn("[OCR] _refreshCaptcha - 驗證碼刷新超時 (5秒)");
+                }
             }, 5000);
         }
     }
@@ -905,10 +982,17 @@
 
         _handleCaptchaInput() {
             const captchaInput = DOMUtils.$("#TicketForm_verifyCode");
+            
             if (captchaInput) {
+                
                 if (appState.isAutoMode && !appState.getFlag("isOcr")) {
+                    console.log("[訂單] 開始 OCR 驗證碼識別");
                     appState.setFlag("isOcr", true);
                     this.ocrService.processCaptcha();
+                } else if (!appState.isAutoMode) {
+                    console.log("[訂單] 非自動模式，跳過 OCR");
+                } else if (appState.getFlag("isOcr")) {
+                    console.log("[訂單] OCR 已在進行中，跳過本次觸發");
                 }
 
                 captchaInput.focus();
@@ -917,6 +1001,8 @@
                         UIManager.autoSubmit();
                     }
                 });
+            } else {
+                console.error("[訂單] 找不到驗證碼輸入框 - #TicketForm_verifyCode");
             }
         }
 
