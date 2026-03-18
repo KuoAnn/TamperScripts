@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.25.1123.2000
-// @description  自動票券選擇與提交，支援選單自訂搶票參數，忽略 alert 並於左上角顯示已自動點擊訊息，移除 .banner-wrapper
+// @version      1.26.0318.1000
+// @description  自動票券選擇與提交，支援左下角懸浮按鈕與選單自訂搶票參數，支援清除設定功能，忽略 alert 並於左上角顯示已自動點擊訊息，移除 .banner-wrapper
 // @author       You
 // @match        https://*.kktix.cc/*
 // @match        https://kktix.com/*
@@ -223,9 +223,12 @@ function createConfigDialog() {
 			<label style="display:block;margin-bottom:4px;font-weight:600;color:#555;">自動刷新時間</label>
 			<input type="datetime-local" step="1" id="cfg-datetime" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px;">
 		</div>
-		<div style="display:flex;gap:12px;justify-content:flex-end;">
-			<button type="button" id="cfg-cancel" style="padding:10px 24px;border:1px solid #ccc;background:#f5f5f5;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;color:#555;">取消</button>
-			<button type="submit" id="cfg-submit" style="padding:10px 24px;border:none;background:#007bff;color:#fff;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;">更新</button>
+		<div style="display:flex;gap:12px;justify-content:space-between;">
+			<button type="button" id="cfg-clear" style="padding:10px 16px;border:1px solid #dc3545;background:#fff;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;color:#dc3545;">清除設定</button>
+			<div style="display:flex;gap:12px;">
+				<button type="button" id="cfg-cancel" style="padding:10px 24px;border:1px solid #ccc;background:#f5f5f5;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;color:#555;">取消</button>
+				<button type="submit" id="cfg-submit" style="padding:10px 24px;border:none;background:#007bff;color:#fff;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;">更新</button>
+			</div>
 		</div>
 	`;
 
@@ -272,6 +275,16 @@ function createConfigDialog() {
 	});
 
 	form.querySelector("#cfg-cancel").addEventListener("click", () => overlay.remove());
+	
+	form.querySelector("#cfg-clear").addEventListener("click", () => {
+		if (confirm("確定要清除所有設定並還原為預設值嗎？")) {
+			GM_setValue("kktix_config", null);
+			overlay.remove();
+			showNotification("設定已清除，3 秒後重新整理", "success");
+			setTimeout(() => location.reload(), 3000);
+		}
+	});
+	
 	overlay.addEventListener("click", (e) => {
 		if (e.target === overlay) overlay.remove();
 	});
@@ -280,6 +293,51 @@ function createConfigDialog() {
 	dialog.appendChild(form);
 	overlay.appendChild(dialog);
 	document.body.appendChild(overlay);
+}
+
+// ===== 左下角懸浮按鈕 =====
+function createFloatingButton() {
+	const btn = document.createElement("button");
+	btn.id = "kktix-floating-btn";
+	btn.textContent = "⚙️ 設定";
+	btn.style.cssText = `
+		position:fixed;
+		bottom:20px;
+		left:20px;
+		padding:12px 16px;
+		background:#007bff;
+		color:#fff;
+		border:none;
+		border-radius:8px;
+		font-size:14px;
+		font-weight:600;
+		cursor:pointer;
+		z-index:9999;
+		box-shadow:0 2px 8px rgba(0,0,0,0.3);
+		transition:all 0.3s ease;
+		font-family:sans-serif;
+	`;
+	
+	btn.addEventListener("mouseenter", function() {
+		this.style.background = "#0056b3";
+		this.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+	});
+	
+	btn.addEventListener("mouseleave", function() {
+		this.style.background = "#007bff";
+		this.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+	});
+	
+	btn.addEventListener("click", createConfigDialog);
+	
+	document.body.appendChild(btn);
+}
+
+// 頁面加載時創建浮動按鈕
+if (document.body) {
+	createFloatingButton();
+} else {
+	document.addEventListener("DOMContentLoaded", createFloatingButton);
 }
 
 // ===== 自動搶票邏輯（僅在 registrations/new 頁面執行） =====
