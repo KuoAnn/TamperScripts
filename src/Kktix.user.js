@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         kktix
 // @namespace    http://tampermonkey.net/
-// @version      1.26.0318.1000
-// @description  自動票券選擇與提交，支援左下角懸浮按鈕與選單自訂搶票參數，支援清除設定功能，忽略 alert 並於左上角顯示已自動點擊訊息，移除 .banner-wrapper
+// @version      1.26.0318.1200
+// @description  自動票券選擇與提交，支援左下角懸浮設定與暫停按鈕、選單自訂搶票參數與清除設定功能，忽略 alert 並於左上角顯示已自動點擊訊息，移除 .banner-wrapper
 // @author       You
 // @match        https://*.kktix.cc/*
 // @match        https://kktix.com/*
@@ -21,13 +21,13 @@
 /* 設定說明
 	keyword：票券關鍵字，支援多組關鍵字，依序比對，空字串代表不篩選
 	qty：票券數量
-	member_code：會員代碼，如無可留空字串 (僅在有會員代碼欄位時自動填入)
+	buy_code：購買代碼，如無可留空字串 (僅在有購買代碼欄位時自動填入)
 	refresh_time：自動刷新時間，格式 YYYY/MM/DD HH:MM:SS (建議設定搶票時間前 1~5 秒)
 */
 const DEFAULT_CONFIG = {
-	keyword: [""],
+	keyword: ["207", "208", "209", "210", "211", "212", "213", "214", "215", "216", "217", "218", "219", "L2", ""],
 	qty: 2,
-	member_code: "VEZ9XJ",
+	buy_code: "",
 	refresh_time: "2025/11/23 11:59:59",
 };
 
@@ -39,7 +39,7 @@ function loadConfig() {
 		return {
 			keyword: Array.isArray(parsed.keyword) ? parsed.keyword : DEFAULT_CONFIG.keyword,
 			qty: typeof parsed.qty === "number" ? parsed.qty : DEFAULT_CONFIG.qty,
-			member_code: typeof parsed.member_code === "string" ? parsed.member_code : DEFAULT_CONFIG.member_code,
+			buy_code: typeof parsed.buy_code === "string" ? parsed.buy_code : DEFAULT_CONFIG.buy_code,
 			refresh_time: typeof parsed.refresh_time === "string" ? parsed.refresh_time : DEFAULT_CONFIG.refresh_time,
 		};
 	} catch {
@@ -107,6 +107,35 @@ const EXCLUDED_TEXTS = ["暫無票券", "已售完", "輪椅席", "身障席", "
 const REMAIN_TICKETS_REGEX = /剩\s*(\d+)\s*張/;
 
 let step = 0;
+let pauseReloadUntil = 0;
+let pauseButtonResetTimer = null;
+
+function isReloadPaused() {
+	return Date.now() < pauseReloadUntil;
+}
+
+function scheduleReload(delay) {
+	setTimeout(() => {
+		if (isReloadPaused()) return;
+		location.reload();
+	}, delay);
+}
+
+function pauseReloadsFor(seconds = 5) {
+	pauseReloadUntil = Date.now() + seconds * 1000;
+	showNotification(`已暫停自動重新整理 ${seconds} 秒`, "warning");
+	if (pauseButtonResetTimer) {
+		clearTimeout(pauseButtonResetTimer);
+	}
+	pauseButtonResetTimer = setTimeout(() => {
+		const pauseBtn = document.getElementById("kktix-pause-btn");
+		if (pauseBtn) {
+			pauseBtn.textContent = "⏸ 暫停";
+			pauseBtn.style.background = "#ffc107";
+			pauseBtn.style.color = "#111";
+		}
+	}, seconds * 1000);
+}
 
 // 自動處理原生對話框：alert
 // alert：改成僅記錄不阻塞
@@ -187,6 +216,14 @@ function showNotification(message, type = "success") {
 function createConfigDialog() {
 	const config = loadConfig();
 
+	// 提示說明映射
+	const FIELD_TIPS = {
+		keyword: "以逗號分隔。留空代表不篩選。條件順序需從嚴謹至寬鬆，若一定要買到則在最後逗號後留空，空格串接視為 AND 條件（例如：輸入「207 L2」會優先選擇同時包含「207」和「L2」的票券）。",
+		qty: "",
+		member: "通常是信用卡前8碼、會員代碼",
+		datetime: "腳本會在此時間自動重新整理頁面。建議設定在搶票開售前 1~5 秒。",
+	};
+
 	const overlay = document.createElement("div");
 	overlay.id = "kktix-config-overlay";
 	overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;";
@@ -202,26 +239,30 @@ function createConfigDialog() {
 	const form = document.createElement("form");
 	form.innerHTML = `
 		<div style="margin-bottom:16px;">
-			<label style="display:block;margin-bottom:4px;font-weight:600;color:#555;">票券關鍵字（多組以逗號分隔，空白代表不篩選）</label>
+			<label for="cfg-keyword" style="display:block;margin-bottom:4px;font-weight:600;color:#555;">票券關鍵字</label>
 			<input type="text" id="cfg-keyword" value="${config.keyword.join(
 				","
 			)}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px;">
+			<div style="margin-top:4px;font-size:12px;line-height:1.4;color:#777;">${FIELD_TIPS.keyword}</div>
 		</div>
 		<div style="margin-bottom:16px;">
-			<label style="display:block;margin-bottom:4px;font-weight:600;color:#555;">票券數量</label>
+			<label for="cfg-qty" style="display:block;margin-bottom:4px;font-weight:600;color:#555;">票券數量</label>
 			<input type="number" id="cfg-qty" value="${
 				config.qty
 			}" min="1" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px;">
+			<div style="margin-top:4px;font-size:12px;line-height:1.4;color:#777;">${FIELD_TIPS.qty}</div>
 		</div>
 		<div style="margin-bottom:16px;">
-			<label style="display:block;margin-bottom:4px;font-weight:600;color:#555;">會員代碼（選填）</label>
+			<label for="cfg-member" style="display:block;margin-bottom:4px;font-weight:600;color:#555;">購買代碼（選填）</label>
 			<input type="text" id="cfg-member" value="${
-				config.member_code
+				config.buy_code
 			}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px;">
+			<div style="margin-top:4px;font-size:12px;line-height:1.4;color:#777;">${FIELD_TIPS.member}</div>
 		</div>
 		<div style="margin-bottom:20px;">
-			<label style="display:block;margin-bottom:4px;font-weight:600;color:#555;">自動刷新時間</label>
+			<label for="cfg-datetime" style="display:block;margin-bottom:4px;font-weight:600;color:#555;">自動刷新時間</label>
 			<input type="datetime-local" step="1" id="cfg-datetime" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px;">
+			<div style="margin-top:4px;font-size:12px;line-height:1.4;color:#777;">${FIELD_TIPS.datetime}</div>
 		</div>
 		<div style="display:flex;gap:12px;justify-content:space-between;">
 			<button type="button" id="cfg-clear" style="padding:10px 16px;border:1px solid #dc3545;background:#fff;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;color:#dc3545;">清除設定</button>
@@ -264,14 +305,14 @@ function createConfigDialog() {
 		const newConfig = {
 			keyword: keywordVal === "" ? [""] : keywordVal.split(",").map((s) => s.trim()),
 			qty: parseInt(form.querySelector("#cfg-qty").value, 10) || DEFAULT_CONFIG.qty,
-			member_code: form.querySelector("#cfg-member").value.trim(),
+			buy_code: form.querySelector("#cfg-member").value.trim(),
 			refresh_time: refreshTime,
 		};
 		saveConfig(newConfig);
 		Object.assign(CUSTOM_CONFIG, newConfig);
 		overlay.remove();
 		showNotification("更新完成，3 秒後重新整理", "success");
-		setTimeout(() => location.reload(), 3000);
+		scheduleReload(3000);
 	});
 
 	form.querySelector("#cfg-cancel").addEventListener("click", () => overlay.remove());
@@ -281,7 +322,7 @@ function createConfigDialog() {
 			GM_setValue("kktix_config", null);
 			overlay.remove();
 			showNotification("設定已清除，3 秒後重新整理", "success");
-			setTimeout(() => location.reload(), 3000);
+			scheduleReload(3000);
 		}
 	});
 	
@@ -297,13 +338,14 @@ function createConfigDialog() {
 
 // ===== 左下角懸浮按鈕 =====
 function createFloatingButton() {
+	const container = document.createElement("div");
+	container.id = "kktix-floating-controls";
+	container.style.cssText = "position:fixed;bottom:20px;left:20px;z-index:9999;display:flex;gap:8px;align-items:center;";
+
 	const btn = document.createElement("button");
 	btn.id = "kktix-floating-btn";
 	btn.textContent = "⚙️ 設定";
 	btn.style.cssText = `
-		position:fixed;
-		bottom:20px;
-		left:20px;
 		padding:12px 16px;
 		background:#007bff;
 		color:#fff;
@@ -313,6 +355,23 @@ function createFloatingButton() {
 		font-weight:600;
 		cursor:pointer;
 		z-index:9999;
+		box-shadow:0 2px 8px rgba(0,0,0,0.3);
+		transition:all 0.3s ease;
+		font-family:sans-serif;
+	`;
+
+	const pauseBtn = document.createElement("button");
+	pauseBtn.id = "kktix-pause-btn";
+	pauseBtn.textContent = "⏸ 暫停";
+	pauseBtn.style.cssText = `
+		padding:12px 16px;
+		background:#ffc107;
+		color:#111;
+		border:none;
+		border-radius:8px;
+		font-size:14px;
+		font-weight:600;
+		cursor:pointer;
 		box-shadow:0 2px 8px rgba(0,0,0,0.3);
 		transition:all 0.3s ease;
 		font-family:sans-serif;
@@ -328,9 +387,27 @@ function createFloatingButton() {
 		this.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
 	});
 	
+	pauseBtn.addEventListener("mouseenter", function() {
+		this.style.background = "#e0a800";
+		this.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+	});
+
+	pauseBtn.addEventListener("mouseleave", function() {
+		this.style.background = isReloadPaused() ? "#f0ad4e" : "#ffc107";
+		this.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+	});
+
 	btn.addEventListener("click", createConfigDialog);
+	pauseBtn.addEventListener("click", () => {
+		pauseReloadsFor(5);
+		pauseBtn.textContent = "⏸ 暫停中";
+		pauseBtn.style.background = "#f0ad4e";
+		pauseBtn.style.color = "#111";
+	});
 	
-	document.body.appendChild(btn);
+	container.appendChild(btn);
+	container.appendChild(pauseBtn);
+	document.body.appendChild(container);
 }
 
 // 頁面加載時創建浮動按鈕
@@ -405,8 +482,8 @@ if (location.pathname.includes("/registrations/new")) {
 			const inputs = document.querySelectorAll(SELECTORS.memberCodeInput);
 			for (let i = 0; i < inputs.length; i++) {
 				const input = inputs[i];
-				if (input.value !== CUSTOM_CONFIG.member_code) {
-					input.value = CUSTOM_CONFIG.member_code;
+				if (input.value !== CUSTOM_CONFIG.buy_code) {
+					input.value = CUSTOM_CONFIG.buy_code;
 					input.dispatchEvent(new Event("input", { bubbles: true }));
 				}
 			}
@@ -482,7 +559,7 @@ if (location.pathname.includes("/registrations/new")) {
 			const statusElements = Array.from(allStatusElements).filter((el) => !el.classList.contains("hide"));
 
 			if (shouldAutoRefresh(statusElements)) {
-				setTimeout(() => location.reload(), DELAYS.reload);
+				scheduleReload(DELAYS.reload);
 				return;
 			}
 
@@ -492,7 +569,7 @@ if (location.pathname.includes("/registrations/new")) {
 				clearTicketUnits();
 
 				if (document.querySelectorAll(SELECTORS.ticketUnit).length === 0) {
-					setTimeout(() => location.reload(), DELAYS.reload);
+					scheduleReload(DELAYS.reload);
 					return;
 				}
 
@@ -541,7 +618,7 @@ if (location.pathname.includes("/registrations/new")) {
 				diff = refreshTime - new Date();
 				if (diff <= 0) {
 					clearInterval(intervalId);
-					if (diff > -500) location.reload();
+					if (diff > -500) scheduleReload(0);
 					observerEnabled = true;
 					return;
 				}
