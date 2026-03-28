@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.25.1006.1912
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過 Service Account 存取),設定介面改為動態彈窗輸入
+// @version      1.26.0329.1
+// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -12,15 +12,32 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_addElement
+// @grant        unsafeWindow
 // @connect      admin.hypercore.com.tw
 // @connect      sheets.googleapis.com
-// @connect      oauth2.googleapis.com
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/TheKeyAuto.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/TheKeyAuto.user.js
 // ==/UserScript==
 
 (function () {
 	"use strict";
+
+	const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+	const GOOGLE_SHEET_CACHE_MAX_AGE = 15 * 60 * 1000;
+	const GOOGLE_ACCESS_TOKEN_REFRESH_BUFFER = 5 * 60 * 1000;
+	const GOOGLE_IDENTITY_SCRIPT_URL = "https://accounts.google.com/gsi/client";
+	const googleSheetState = {
+		sheetId: "",
+		clientId: "",
+		email: "",
+		accessToken: "",
+		accessTokenExpire: 0,
+		cachedData: null,
+		cachedDataTime: 0,
+		initialized: false,
+	};
+	let googleSheetDataLoadingPromise = null;
+	let googleIdentityScriptPromise = null;
 
 	// 加入表格樣式
 	GM_addStyle(`
@@ -317,6 +334,12 @@
 			border-color: #007bff;
 			box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
 		}
+		.settings-form-hint {
+			margin-top: 6px;
+			font-size: 12px;
+			color: #666;
+			line-height: 1.5;
+		}
 		.settings-form-actions {
 			display: flex;
 			gap: 10px;
@@ -348,16 +371,61 @@
 		}
 	`);
 
+	async function refreshGoogleSheetState() {
+		const [sheetId, clientId, email, accessToken, accessTokenExpire, cachedData, cachedDataTime] = await Promise.all([
+			GM_getValue("google_sheet_id", ""),
+			GM_getValue("google_oauth_client_id", ""),
+			GM_getValue("thekey_email", ""),
+			GM_getValue("google_access_token", ""),
+			GM_getValue("google_access_token_expire", 0),
+			GM_getValue("google_sheet_cache", ""),
+			GM_getValue("google_sheet_cache_time", 0),
+		]);
+
+		googleSheetState.sheetId = (sheetId || "").trim();
+		googleSheetState.clientId = (clientId || "").trim();
+		googleSheetState.email = (email || "").trim();
+		googleSheetState.accessToken = accessToken || "";
+		googleSheetState.accessTokenExpire = Number(accessTokenExpire) || 0;
+		googleSheetState.cachedDataTime = Number(cachedDataTime) || 0;
+		googleSheetState.cachedData = null;
+
+		if (cachedData) {
+			try {
+				googleSheetState.cachedData = JSON.parse(cachedData);
+			} catch (err) {
+				console.warn("Google Sheets 快取格式錯誤，已忽略舊快取:", err);
+			}
+		}
+
+		googleSheetState.initialized = true;
+		return googleSheetState;
+	}
+
+	async function clearGoogleSheetCache() {
+		googleSheetState.accessToken = "";
+		googleSheetState.accessTokenExpire = 0;
+		googleSheetState.cachedData = null;
+		googleSheetState.cachedDataTime = 0;
+		googleSheetDataLoadingPromise = null;
+
+		await Promise.all([
+			GM_setValue("google_sheet_cache", ""),
+			GM_setValue("google_sheet_cache_time", 0),
+			GM_setValue("google_access_token", ""),
+			GM_setValue("google_access_token_expire", 0),
+		]);
+	}
+
 	/**
-	 * 顯示統一設定彈窗 (包含帳號密碼與 Google Sheets 設定)
+	 * 顯示統一設定彈窗 (包含帳號密碼與 Google Sheets OAuth 設定)
 	 */
 	async function showSettingsModal() {
 		// 取得目前儲存的值
 		const currentEmail = await GM_getValue("thekey_email", "");
 		const currentPassword = await GM_getValue("thekey_password", "");
 		const currentSheetId = await GM_getValue("google_sheet_id", "");
-		const currentServiceEmail = await GM_getValue("google_service_account_email", "");
-		const currentPrivateKey = await GM_getValue("google_service_account_private_key", "");
+		const currentGoogleClientId = await GM_getValue("google_oauth_client_id", "");
 		const currentFuzzyUsers = await GM_getValue("fuzzy_search_usernames", "蔡嘉如,lulu");
 
 		// 建立 modal
@@ -380,18 +448,16 @@
 				<div class="settings-form-group">
 					<label for="settings-sheet-id">Google Sheet ID</label>
 					<input type="text" id="settings-sheet-id" value="${currentSheetId}" placeholder="請輸入 Google Sheet ID">
+					<div class="settings-form-hint">請確認上方「帳號 (Email)」對此 Sheet 有檢視權限。</div>
+				</div>
+				<div class="settings-form-group">
+					<label for="settings-google-client-id">Google OAuth Client ID</label>
+					<input type="text" id="settings-google-client-id" value="${currentGoogleClientId}" placeholder="請輸入 Web application 類型的 OAuth Client ID">
+					<div class="settings-form-hint">Google 會使用上方「帳號 (Email)」作為登入提示。首次使用模糊搜尋時會跳出授權視窗。</div>
 				</div>
 				<div class="settings-form-group">
 					<label for="settings-fuzzy-users">啟用模糊搜尋使用者 (以逗號分隔)</label>
 					<input type="text" id="settings-fuzzy-users" value="${currentFuzzyUsers}" placeholder="例如: 蔡嘉如,lulu (不計大小寫)">
-				</div>
-				<div class="settings-form-group">
-					<label for="settings-service-email">Service Account Email</label>
-					<input type="email" id="settings-service-email" value="${currentServiceEmail}" placeholder="請輸入 Service Account Email">
-				</div>
-				<div class="settings-form-group">
-					<label for="settings-private-key">Service Account Private Key</label>
-					<textarea id="settings-private-key" placeholder="請輸入 Service Account Private Key (完整 PEM 格式，包含 BEGIN/END)">${currentPrivateKey}</textarea>
 				</div>
 				<div class="settings-form-actions">
 					<button class="settings-btn settings-btn-secondary" id="settings-cancel">取消</button>
@@ -428,8 +494,7 @@
 			const email = modal.querySelector("#settings-email").value.trim();
 			const password = modal.querySelector("#settings-password").value.trim();
 			const sheetId = modal.querySelector("#settings-sheet-id").value.trim();
-			const serviceEmail = modal.querySelector("#settings-service-email").value.trim();
-			const privateKey = modal.querySelector("#settings-private-key").value.trim();
+			const googleClientId = modal.querySelector("#settings-google-client-id").value.trim();
 			const fuzzyUsers = modal.querySelector("#settings-fuzzy-users").value.trim();
 
 			// 基本驗證 (帳號密碼必填)
@@ -444,17 +509,13 @@
 
 			// 儲存 Google Sheets 設定 (允許為空)
 			await GM_setValue("google_sheet_id", sheetId);
-			await GM_setValue("google_service_account_email", serviceEmail);
-			await GM_setValue("google_service_account_private_key", privateKey);
+			await GM_setValue("google_oauth_client_id", googleClientId);
 			// 儲存模糊搜尋啟用使用者 (支援多筆 , 隔開)
 			await GM_setValue("fuzzy_search_usernames", fuzzyUsers);
 
-			// 如果有更新 Google Sheets 設定，清除快取
-			if (sheetId || serviceEmail || privateKey) {
-				await GM_setValue("google_sheet_cache", null);
-				await GM_setValue("google_sheet_cache_time", null);
-				await GM_setValue("google_access_token", null);
-				await GM_setValue("google_access_token_expire", null);
+			const googleSettingsChanged = email !== currentEmail || sheetId !== currentSheetId || googleClientId !== currentGoogleClientId;
+			if (googleSettingsChanged) {
+				await clearGoogleSheetCache();
 			}
 
 			window.location.reload();
@@ -543,216 +604,146 @@
 		}
 	}
 
-	/**
-	 * Base64 URL 編碼（用於 JWT）
-	 * @param {string} str 要編碼的字串
-	 * @returns {string} Base64 URL 編碼後的字串
-	 */
-	function base64UrlEncode(str) {
-		return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-	}
-
-	/**
-	 * 將 ArrayBuffer 轉換為 Base64 URL 編碼
-	 * @param {ArrayBuffer} buffer ArrayBuffer
-	 * @returns {string} Base64 URL 編碼後的字串
-	 */
-	function arrayBufferToBase64Url(buffer) {
-		const bytes = new Uint8Array(buffer);
-		const binary = String.fromCharCode(...bytes);
-		return base64UrlEncode(binary);
-	}
-
-	/**
-	 * 將 PEM 格式的私鑰轉換為 CryptoKey
-	 * @param {string} pemKey PEM 格式的私鑰
-	 * @returns {Promise<CryptoKey>} CryptoKey 物件
-	 */
-	async function importPrivateKey(pemKey) {
-		const pemHeader = "-----BEGIN PRIVATE KEY-----";
-		const pemFooter = "-----END PRIVATE KEY-----";
-		let pemContents = pemKey.trim();
-
-		// 先將 \n 字面字串轉換為實際換行符
-		pemContents = pemContents.replace(/\\n/g, "\n");
-
-		// 只移除 header/footer，保留 base64 內容的換行
-		if (pemContents.startsWith(pemHeader) && pemContents.endsWith(pemFooter)) {
-			pemContents = pemContents.replace(pemHeader, "").replace(pemFooter, "").trim();
+	function getGoogleIdentityApi() {
+		const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+		const googleIdentity = pageWindow.google;
+		if (!googleIdentity?.accounts?.oauth2) {
+			throw new Error("Google OAuth 元件尚未載入，請重新整理頁面後再試");
 		}
-		// 合併所有換行，得到純 base64 字串
-		pemContents = pemContents.replace(/[\r\n]/g, "");
+		return googleIdentity;
+	}
 
-		// Base64 解碼
-		const binaryDer = atob(pemContents);
-		const bytes = new Uint8Array(binaryDer.length);
-		for (let i = 0; i < binaryDer.length; i++) {
-			bytes[i] = binaryDer.charCodeAt(i);
+	function loadGoogleIdentityScript() {
+		if (googleIdentityScriptPromise) {
+			return googleIdentityScriptPromise;
 		}
 
-		return await crypto.subtle.importKey("pkcs8", bytes.buffer, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
-	}
-
-	/**
-	 * 建立 JWT (JSON Web Token) 用於 Google Service Account 認證
-	 * @param {string} clientEmail Service Account Email
-	 * @param {string} privateKey Service Account Private Key (PEM 格式)
-	 * @returns {Promise<string>} JWT token
-	 */
-	async function createJWT(clientEmail, privateKey) {
-		const now = Math.floor(Date.now() / 1000);
-		const expiry = now + 3600; // 1 小時後過期
-
-		// JWT Header
-		const header = {
-			alg: "RS256",
-			typ: "JWT",
-		};
-
-		// JWT Payload
-		const payload = {
-			iss: clientEmail,
-			scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
-			aud: "https://oauth2.googleapis.com/token",
-			exp: expiry,
-			iat: now,
-		};
-
-		// 編碼 header 和 payload
-		const encodedHeader = base64UrlEncode(JSON.stringify(header));
-		const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-		const unsignedToken = `${encodedHeader}.${encodedPayload}`;
-
-		// 使用私鑰簽章
-		const cryptoKey = await importPrivateKey(privateKey);
-		const encoder = new TextEncoder();
-		const data = encoder.encode(unsignedToken);
-		const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, data);
-
-		// 組合完整的 JWT
-		const encodedSignature = arrayBufferToBase64Url(signature);
-		return `${unsignedToken}.${encodedSignature}`;
-	}
-
-	/**
-	 * 使用 Service Account JWT 取得 Google OAuth2 Access Token
-	 * @returns {Promise<string|null>} Access Token 或 null
-	 */
-	async function getServiceAccountAccessToken() {
-		try {
-			const clientEmail = await GM_getValue("google_service_account_email", "");
-			const privateKey = await GM_getValue("google_service_account_private_key", "");
-
-			if (!clientEmail || !privateKey) {
-				console.warn("Service Account 設定不完整，請先設定 Email 和 Private Key");
-				return null;
+		googleIdentityScriptPromise = new Promise((resolve, reject) => {
+			const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+			if (pageWindow.google?.accounts?.oauth2) {
+				resolve(pageWindow.google);
+				return;
 			}
 
-			// 檢查快取的 access token
-			const cachedToken = await GM_getValue("google_access_token", "");
-			const tokenExpire = await GM_getValue("google_access_token_expire", 0);
-			const now = Date.now();
-
-			// 如果 token 還有效（提前 5 分鐘更新）
-			if (cachedToken && now < tokenExpire - 5 * 60 * 1000) {
-				console.log("使用快取的 Access Token");
-				return cachedToken;
+			const existingScript = document.querySelector(`script[src^="${GOOGLE_IDENTITY_SCRIPT_URL}"]`);
+			if (existingScript) {
+				existingScript.addEventListener("load", () => resolve(pageWindow.google), { once: true });
+				existingScript.addEventListener("error", () => reject(new Error("Google OAuth 元件載入失敗")), { once: true });
+				return;
 			}
 
-			console.log("正在取得新的 Access Token...");
+			const script = document.createElement("script");
+			script.src = GOOGLE_IDENTITY_SCRIPT_URL;
+			script.async = true;
+			script.defer = true;
+			script.onload = () => resolve(pageWindow.google);
+			script.onerror = () => reject(new Error("Google OAuth 元件載入失敗"));
+			(document.head || document.documentElement).appendChild(script);
+		});
 
-			// 建立 JWT
-			const jwt = await createJWT(clientEmail, privateKey);
+		return googleIdentityScriptPromise;
+	}
 
-			// 向 Google OAuth2 交換 access token
-			const tokenUrl = "https://oauth2.googleapis.com/token";
-			const body = new URLSearchParams({
-				grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-				assertion: jwt,
-			});
+	async function getGoogleUserAccessToken(interactive = false) {
+		if (!googleSheetState.initialized) {
+			await refreshGoogleSheetState();
+		}
 
-			return new Promise((resolve, reject) => {
-				GM_xmlhttpRequest({
-					method: "POST",
-					url: tokenUrl,
-					headers: {
-						"Content-Type": "application/x-www-form-urlencoded",
-					},
-					data: body.toString(),
-					onload: async (response) => {
-						try {
-							if (response.status !== 200) {
-								console.error("取得 Access Token 失敗:", response.statusText, response.responseText);
-								reject(new Error(response.statusText));
-								return;
-							}
+		if (googleSheetState.accessToken && Date.now() < googleSheetState.accessTokenExpire - GOOGLE_ACCESS_TOKEN_REFRESH_BUFFER) {
+			return googleSheetState.accessToken;
+		}
 
-							const data = JSON.parse(response.responseText);
-							const accessToken = data.access_token;
-							const expiresIn = data.expires_in || 3600; // 預設 1 小時
-
-							// 儲存 token 和過期時間
-							await GM_setValue("google_access_token", accessToken);
-							await GM_setValue("google_access_token_expire", Date.now() + expiresIn * 1000);
-
-							console.log("成功取得 Access Token");
-							resolve(accessToken);
-						} catch (err) {
-							console.error("處理 Access Token 回應失敗:", err);
-							reject(err);
-						}
-					},
-					onerror: (error) => {
-						console.error("取得 Access Token 請求錯誤:", error);
-						reject(error);
-					},
-				});
-			});
-		} catch (err) {
-			console.error("getServiceAccountAccessToken 失敗:", err);
+		if (!interactive) {
 			return null;
 		}
+
+		if (!googleSheetState.clientId) {
+			throw new Error("請先在設定中填入 Google OAuth Client ID");
+		}
+
+		if (!googleSheetState.email) {
+			throw new Error("請先在設定中填入帳號 (Email)，Google 會使用它作為登入提示");
+		}
+
+		console.log("正在向 Google 取得使用者 Access Token...");
+		await loadGoogleIdentityScript();
+		const googleIdentity = getGoogleIdentityApi();
+
+		return new Promise((resolve, reject) => {
+			const tokenClient = googleIdentity.accounts.oauth2.initTokenClient({
+				client_id: googleSheetState.clientId,
+				scope: GOOGLE_SHEETS_SCOPE,
+				login_hint: googleSheetState.email,
+				callback: async (tokenResponse) => {
+					try {
+						if (!tokenResponse || tokenResponse.error || !tokenResponse.access_token) {
+							const message = tokenResponse?.error_description || tokenResponse?.error || "Google OAuth 未回傳 access token";
+							reject(new Error(message));
+							return;
+						}
+
+						const expiresIn = Number(tokenResponse.expires_in) || 3600;
+						googleSheetState.accessToken = tokenResponse.access_token;
+						googleSheetState.accessTokenExpire = Date.now() + expiresIn * 1000;
+
+						await Promise.all([
+							GM_setValue("google_access_token", googleSheetState.accessToken),
+							GM_setValue("google_access_token_expire", googleSheetState.accessTokenExpire),
+						]);
+
+						console.log("成功取得 Google 使用者 Access Token");
+						resolve(googleSheetState.accessToken);
+					} catch (err) {
+						reject(err);
+					}
+				},
+				error_callback: (error) => {
+					const message = error?.type ? `Google OAuth 失敗: ${error.type}` : "Google OAuth 失敗";
+					reject(new Error(message));
+				},
+			});
+
+			tokenClient.requestAccessToken({
+				prompt: "",
+				login_hint: googleSheetState.email,
+			});
+		});
 	}
 
 	/**
-	 * 從 Google Sheets API 讀取資料
+	 * 使用個人 Google 帳號 OAuth 讀取 Google Sheets 資料
+	 * @param {{interactive?: boolean}} [options] 載入選項
 	 * @returns {Promise<Object|null>} 姓名電話對應物件 {姓名: 電話, ...} 或 null
 	 */
-	async function fetchGoogleSheetData() {
-		try {
-			const sheetId = await GM_getValue("google_sheet_id", "");
+	async function fetchGoogleSheetData(options = {}) {
+		const { interactive = false } = options;
 
-			if (!sheetId) {
+		try {
+			if (!googleSheetState.initialized) {
+				await refreshGoogleSheetState();
+			}
+
+			if (!googleSheetState.sheetId) {
 				console.warn("Google Sheets 設定不完整，請先設定 Sheet ID");
 				return null;
 			}
 
-			// 檢查快取
-			const cacheTime = await GM_getValue("google_sheet_cache_time", 0);
-			const now = Date.now();
-			const cacheMaxAge = 15 * 60 * 1000; // 15 分鐘
-
-			if (now - cacheTime < cacheMaxAge) {
-				const cachedData = await GM_getValue("google_sheet_cache", null);
-				if (cachedData) {
-					console.log("使用快取的 Google Sheets 資料");
-					return JSON.parse(cachedData);
-				}
+			if (googleSheetState.cachedData && Date.now() - googleSheetState.cachedDataTime < GOOGLE_SHEET_CACHE_MAX_AGE) {
+				console.log("使用快取的 Google Sheets 資料");
+				return googleSheetState.cachedData;
 			}
 
-			// 取得 Access Token
-			const accessToken = await getServiceAccountAccessToken();
+			const accessToken = await getGoogleUserAccessToken(interactive);
 			if (!accessToken) {
-				console.error("無法取得 Access Token");
+				console.warn("目前沒有可用的 Google Access Token，等待使用者在首次搜尋時授權");
 				return null;
 			}
 
-			// 取得資料
 			const sheetName = "TK MB LOG";
 			const range = `${sheetName}!C:D`;
-			const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}`;
+			const url = `https://sheets.googleapis.com/v4/spreadsheets/${googleSheetState.sheetId}/values/${encodeURIComponent(range)}`;
 
-			console.log("正在從 Google Sheets API 取得資料...");
+			console.log(`正在使用個人 Google 帳號 ${googleSheetState.email} 讀取 Google Sheets 資料...`);
 
 			return new Promise((resolve, reject) => {
 				GM_xmlhttpRequest({
@@ -764,8 +755,24 @@
 					onload: async (response) => {
 						try {
 							if (response.status !== 200) {
+								if (response.status === 401) {
+									googleSheetState.accessToken = "";
+									googleSheetState.accessTokenExpire = 0;
+									await Promise.all([
+										GM_setValue("google_access_token", ""),
+										GM_setValue("google_access_token_expire", 0),
+									]);
+								}
+
+								let errorMessage = `Google Sheets API 請求失敗 (${response.status})`;
+								if (response.status === 403) {
+									errorMessage = `Google 帳號 ${googleSheetState.email || "(未設定)"} 沒有此 Sheet 的檢視權限，請確認共用設定`;
+								} else if (response.status === 401) {
+									errorMessage = "Google 授權已失效，請重新輸入搜尋關鍵字以重新授權";
+								}
+
 								console.error("Google Sheets API 請求失敗:", response.statusText, response.responseText);
-								reject(new Error(response.statusText));
+								reject(new Error(errorMessage));
 								return;
 							}
 
@@ -776,7 +783,6 @@
 								return;
 							}
 
-							// 將資料轉換為 {姓名: 電話} 物件，排除第一列（標題列）
 							const namePhoneMap = {};
 							for (let i = 1; i < data.values.length; i++) {
 								const row = data.values[i];
@@ -785,7 +791,6 @@
 								const name = (row[0] || "").toString().trim();
 								const phone = (row[1] || "").toString().trim();
 
-								// 忽略空值
 								if (name && phone) {
 									namePhoneMap[name] = phone;
 								}
@@ -793,9 +798,12 @@
 
 							console.log(`成功取得 ${Object.keys(namePhoneMap).length} 筆姓名電話資料（已排除標題列）`);
 
-							// 儲存快取
-							await GM_setValue("google_sheet_cache", JSON.stringify(namePhoneMap));
-							await GM_setValue("google_sheet_cache_time", Date.now());
+							googleSheetState.cachedData = namePhoneMap;
+							googleSheetState.cachedDataTime = Date.now();
+							await Promise.all([
+								GM_setValue("google_sheet_cache", JSON.stringify(namePhoneMap)),
+								GM_setValue("google_sheet_cache_time", googleSheetState.cachedDataTime),
+							]);
 
 							resolve(namePhoneMap);
 						} catch (err) {
@@ -813,6 +821,20 @@
 			console.error("fetchGoogleSheetData 失敗:", err);
 			return null;
 		}
+	}
+
+	async function ensureGoogleSheetDataLoaded(interactive = false) {
+		if (googleSheetState.cachedData && Date.now() - googleSheetState.cachedDataTime < GOOGLE_SHEET_CACHE_MAX_AGE) {
+			return googleSheetState.cachedData;
+		}
+
+		if (!googleSheetDataLoadingPromise) {
+			googleSheetDataLoadingPromise = fetchGoogleSheetData({ interactive }).finally(() => {
+				googleSheetDataLoadingPromise = null;
+			});
+		}
+
+		return googleSheetDataLoadingPromise;
 	}
 
 	/**
@@ -1532,26 +1554,42 @@
 	async function initMemberSearchFuzzySearch() {
 		try {
 			console.log("初始化會員查詢模糊搜尋功能...");
+			await refreshGoogleSheetState();
 
-			// 取得 Google Sheets 資料
-			const namePhoneMap = await fetchGoogleSheetData();
-			if (!namePhoneMap) {
-				console.warn("無法取得 Google Sheets 資料，模糊搜尋功能未啟用");
-				return;
-			}
+			let namePhoneMap = googleSheetState.cachedData;
+			let totalCount = namePhoneMap ? Object.keys(namePhoneMap).length : 0;
+			let authErrorMessage = "";
 
-			const totalCount = Object.keys(namePhoneMap).length;
-			console.log(`已載入 ${totalCount} 筆姓名電話資料`);
-
-			// 顯示資料總數於 input placeholder
-			function setPhoneInputPlaceholder() {
+			function setPhoneInputPlaceholder(message = "") {
 				const phoneInput = document.querySelector('input[name="search_phone"]');
-				if (phoneInput) {
-					phoneInput.placeholder = `請輸入姓名或電話 (共 ${totalCount} 筆搜尋)`;
+				if (!phoneInput) return;
+
+				if (message) {
+					phoneInput.placeholder = message;
+					return;
 				}
+
+				if (totalCount > 0) {
+					phoneInput.placeholder = `請輸入姓名或電話 (共 ${totalCount} 筆搜尋)`;
+					return;
+				}
+
+				phoneInput.placeholder = "請輸入姓名或電話 (首次使用會要求 Google 授權)";
 			}
-			// 初始設置 placeholder
-			setPhoneInputPlaceholder();
+
+			async function ensureSearchData(interactive = false) {
+				const data = await ensureGoogleSheetDataLoaded(interactive);
+				if (!data) {
+					return null;
+				}
+
+				namePhoneMap = data;
+				totalCount = Object.keys(namePhoneMap).length;
+				authErrorMessage = "";
+				console.log(`已載入 ${totalCount} 筆姓名電話資料`);
+				setPhoneInputPlaceholder();
+				return namePhoneMap;
+			}
 
 			// 等待會員查詢 modal 出現
 			function setupFuzzySearch(retry = 0) {
@@ -1568,15 +1606,42 @@
 				phoneInput.dataset.fuzzySearchBound = "true";
 
 				console.log("找到電話輸入欄位，綁定模糊搜尋事件");
+				setPhoneInputPlaceholder(authErrorMessage);
 
 				let debounceTimer = null;
 
-				phoneInput.addEventListener("input", (event) => {
+				phoneInput.addEventListener("input", async (event) => {
 					const keyword = event.target.value;
 
 					// 清除之前的計時器
 					if (debounceTimer) {
 						clearTimeout(debounceTimer);
+					}
+
+					if (!keyword || keyword.trim() === "") {
+						clearFuzzySearchBadges();
+						setPhoneInputPlaceholder(authErrorMessage);
+						return;
+					}
+
+					if (!namePhoneMap) {
+						try {
+							setPhoneInputPlaceholder("Google 授權中，請完成授權後再搜尋...");
+							const loadedData = await ensureSearchData(true);
+							if (!loadedData) {
+								authErrorMessage = "無法取得 Google Sheets 資料";
+								setPhoneInputPlaceholder(authErrorMessage);
+								clearFuzzySearchBadges();
+								return;
+							}
+						} catch (err) {
+							authErrorMessage = err.message || "Google 授權失敗";
+							console.error("載入 Google Sheets 資料失敗:", err);
+							setPhoneInputPlaceholder(authErrorMessage);
+							clearFuzzySearchBadges();
+							alert(authErrorMessage);
+							return;
+						}
 					}
 
 					// 設定新的計時器 (100ms 防抖)
@@ -1618,6 +1683,7 @@
 
 			// 立即檢查一次
 			setupFuzzySearch();
+			void ensureSearchData(false);
 		} catch (err) {
 			console.error("初始化會員查詢模糊搜尋失敗:", err);
 		}
