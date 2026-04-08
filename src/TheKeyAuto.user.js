@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0329.1
+// @version      1.26.0408.1
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -38,6 +38,25 @@
 	};
 	let googleSheetDataLoadingPromise = null;
 	let googleIdentityScriptPromise = null;
+
+	function normalizeGoogleSheetRecords(records) {
+		if (!Array.isArray(records)) return null;
+
+		return records
+			.map((record) => ({
+				name: (record?.name || "").toString().trim(),
+				phone: (record?.phone || "").toString().trim(),
+			}))
+			.filter((record) => record.name && record.phone);
+	}
+
+	function countGoogleSheetRecords(records) {
+		return Array.isArray(records) ? records.length : 0;
+	}
+
+	function normalizePhoneForSearch(value) {
+		return (value || "").toString().replace(/\D/g, "");
+	}
 
 	// 加入表格樣式
 	GM_addStyle(`
@@ -392,7 +411,15 @@
 
 		if (cachedData) {
 			try {
-				googleSheetState.cachedData = JSON.parse(cachedData);
+				const parsedCachedData = JSON.parse(cachedData);
+				const normalizedRecords = normalizeGoogleSheetRecords(parsedCachedData);
+
+				if (normalizedRecords) {
+					googleSheetState.cachedData = normalizedRecords;
+				} else {
+					console.warn("Google Sheets 舊版快取格式已失效，將重新抓取完整資料");
+					googleSheetState.cachedDataTime = 0;
+				}
 			} catch (err) {
 				console.warn("Google Sheets 快取格式錯誤，已忽略舊快取:", err);
 			}
@@ -783,7 +810,7 @@
 								return;
 							}
 
-							const namePhoneMap = {};
+							const records = [];
 							for (let i = 1; i < data.values.length; i++) {
 								const row = data.values[i];
 								if (row.length < 2) continue;
@@ -792,20 +819,20 @@
 								const phone = (row[1] || "").toString().trim();
 
 								if (name && phone) {
-									namePhoneMap[name] = phone;
+									records.push({ name, phone });
 								}
 							}
 
-							console.log(`成功取得 ${Object.keys(namePhoneMap).length} 筆姓名電話資料（已排除標題列）`);
+							console.log(`成功取得 ${records.length} 筆姓名電話資料（已排除標題列）`);
 
-							googleSheetState.cachedData = namePhoneMap;
+							googleSheetState.cachedData = records;
 							googleSheetState.cachedDataTime = Date.now();
 							await Promise.all([
-								GM_setValue("google_sheet_cache", JSON.stringify(namePhoneMap)),
+								GM_setValue("google_sheet_cache", JSON.stringify(records)),
 								GM_setValue("google_sheet_cache_time", googleSheetState.cachedDataTime),
 							]);
 
-							resolve(namePhoneMap);
+							resolve(records);
 						} catch (err) {
 							console.error("處理 Google Sheets 資料失敗:", err);
 							reject(err);
@@ -1471,18 +1498,28 @@
 	/**
 	 * 模糊搜尋姓名或電話
 	 * @param {string} keyword 搜尋關鍵字
-	 * @param {Object} namePhoneMap 姓名電話對應物件
+	 * @param {Array<{name: string, phone: string}>} records 姓名電話資料
 	 * @returns {Array<{name: string, phone: string}>} 搜尋結果陣列
 	 */
-	function fuzzySearch(keyword, namePhoneMap) {
-		if (!keyword || !namePhoneMap) return [];
+	function fuzzySearch(keyword, records) {
+		if (!keyword || !Array.isArray(records)) return [];
 
 		const normalizedKeyword = keyword.trim().toLowerCase();
 		if (!normalizedKeyword) return [];
 
+		const normalizedKeywordPhone = normalizePhoneForSearch(keyword);
 		const results = [];
-		for (const [name, phone] of Object.entries(namePhoneMap)) {
-			if (name.toLowerCase().includes(normalizedKeyword) || phone.toLowerCase().includes(normalizedKeyword)) {
+		for (const record of records) {
+			const name = (record?.name || "").toString();
+			const phone = (record?.phone || "").toString();
+			const normalizedPhone = phone.toLowerCase();
+			const normalizedPhoneDigits = normalizePhoneForSearch(phone);
+
+			if (
+				name.toLowerCase().includes(normalizedKeyword) ||
+				normalizedPhone.includes(normalizedKeyword) ||
+				(normalizedKeywordPhone && normalizedPhoneDigits.includes(normalizedKeywordPhone))
+			) {
 				results.push({ name, phone });
 			}
 		}
@@ -1556,8 +1593,8 @@
 			console.log("初始化會員查詢模糊搜尋功能...");
 			await refreshGoogleSheetState();
 
-			let namePhoneMap = googleSheetState.cachedData;
-			let totalCount = namePhoneMap ? Object.keys(namePhoneMap).length : 0;
+			let namePhoneRecords = googleSheetState.cachedData;
+			let totalCount = countGoogleSheetRecords(namePhoneRecords);
 			let authErrorMessage = "";
 
 			function setPhoneInputPlaceholder(message = "") {
@@ -1583,12 +1620,12 @@
 					return null;
 				}
 
-				namePhoneMap = data;
-				totalCount = Object.keys(namePhoneMap).length;
+				namePhoneRecords = data;
+				totalCount = countGoogleSheetRecords(namePhoneRecords);
 				authErrorMessage = "";
 				console.log(`已載入 ${totalCount} 筆姓名電話資料`);
 				setPhoneInputPlaceholder();
-				return namePhoneMap;
+				return namePhoneRecords;
 			}
 
 			// 等待會員查詢 modal 出現
@@ -1624,7 +1661,7 @@
 						return;
 					}
 
-					if (!namePhoneMap) {
+					if (!namePhoneRecords) {
 						try {
 							setPhoneInputPlaceholder("Google 授權中，請完成授權後再搜尋...");
 							const loadedData = await ensureSearchData(true);
@@ -1651,7 +1688,7 @@
 							return;
 						}
 
-						const results = fuzzySearch(keyword, namePhoneMap);
+						const results = fuzzySearch(keyword, namePhoneRecords);
 						showFuzzySearchBadges(results, phoneInput);
 					}, 100);
 				});
