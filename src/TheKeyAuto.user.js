@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0408.1
+// @version      1.26.0531.1
 // @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -37,6 +37,7 @@
 		initialized: false,
 	};
 	let googleSheetDataLoadingPromise = null;
+	let googleSheetDataLoadingInteractive = false;
 	let googleIdentityScriptPromise = null;
 
 	function normalizeGoogleSheetRecords(records) {
@@ -56,6 +57,10 @@
 
 	function normalizePhoneForSearch(value) {
 		return (value || "").toString().replace(/\D/g, "");
+	}
+
+	function hasFreshGoogleSheetCache() {
+		return !!(googleSheetState.cachedData && Date.now() - googleSheetState.cachedDataTime < GOOGLE_SHEET_CACHE_MAX_AGE);
 	}
 
 	// 加入表格樣式
@@ -435,6 +440,7 @@
 		googleSheetState.cachedData = null;
 		googleSheetState.cachedDataTime = 0;
 		googleSheetDataLoadingPromise = null;
+		googleSheetDataLoadingInteractive = false;
 
 		await Promise.all([
 			GM_setValue("google_sheet_cache", ""),
@@ -755,7 +761,7 @@
 				return null;
 			}
 
-			if (googleSheetState.cachedData && Date.now() - googleSheetState.cachedDataTime < GOOGLE_SHEET_CACHE_MAX_AGE) {
+			if (hasFreshGoogleSheetCache()) {
 				console.log("使用快取的 Google Sheets 資料");
 				return googleSheetState.cachedData;
 			}
@@ -851,13 +857,19 @@
 	}
 
 	async function ensureGoogleSheetDataLoaded(interactive = false) {
-		if (googleSheetState.cachedData && Date.now() - googleSheetState.cachedDataTime < GOOGLE_SHEET_CACHE_MAX_AGE) {
+		if (hasFreshGoogleSheetCache()) {
 			return googleSheetState.cachedData;
 		}
 
-		if (!googleSheetDataLoadingPromise) {
-			googleSheetDataLoadingPromise = fetchGoogleSheetData({ interactive }).finally(() => {
-				googleSheetDataLoadingPromise = null;
+		if (!googleSheetDataLoadingPromise || (interactive && !googleSheetDataLoadingInteractive)) {
+			googleSheetDataLoadingInteractive = interactive;
+			const loadingPromise = fetchGoogleSheetData({ interactive });
+			googleSheetDataLoadingPromise = loadingPromise;
+			loadingPromise.finally(() => {
+				if (googleSheetDataLoadingPromise === loadingPromise) {
+					googleSheetDataLoadingPromise = null;
+					googleSheetDataLoadingInteractive = false;
+				}
 			});
 		}
 
@@ -1593,7 +1605,9 @@
 			console.log("初始化會員查詢模糊搜尋功能...");
 			await refreshGoogleSheetState();
 
+			const hasFreshCache = hasFreshGoogleSheetCache();
 			let namePhoneRecords = googleSheetState.cachedData;
+			let searchDataNeedsRefresh = !hasFreshCache;
 			let totalCount = countGoogleSheetRecords(namePhoneRecords);
 			let authErrorMessage = "";
 
@@ -1617,10 +1631,12 @@
 			async function ensureSearchData(interactive = false) {
 				const data = await ensureGoogleSheetDataLoaded(interactive);
 				if (!data) {
+					searchDataNeedsRefresh = true;
 					return null;
 				}
 
 				namePhoneRecords = data;
+				searchDataNeedsRefresh = false;
 				totalCount = countGoogleSheetRecords(namePhoneRecords);
 				authErrorMessage = "";
 				console.log(`已載入 ${totalCount} 筆姓名電話資料`);
@@ -1661,23 +1677,32 @@
 						return;
 					}
 
-					if (!namePhoneRecords) {
+					if (!namePhoneRecords || searchDataNeedsRefresh) {
 						try {
 							setPhoneInputPlaceholder("Google 授權中，請完成授權後再搜尋...");
 							const loadedData = await ensureSearchData(true);
 							if (!loadedData) {
-								authErrorMessage = "無法取得 Google Sheets 資料";
+								if (!namePhoneRecords) {
+									authErrorMessage = "無法取得 Google Sheets 資料";
+									setPhoneInputPlaceholder(authErrorMessage);
+									clearFuzzySearchBadges();
+									return;
+								}
+
+								authErrorMessage = "Google 資料更新失敗，改用舊快取搜尋";
 								setPhoneInputPlaceholder(authErrorMessage);
-								clearFuzzySearchBadges();
-								return;
 							}
 						} catch (err) {
 							authErrorMessage = err.message || "Google 授權失敗";
 							console.error("載入 Google Sheets 資料失敗:", err);
-							setPhoneInputPlaceholder(authErrorMessage);
-							clearFuzzySearchBadges();
-							alert(authErrorMessage);
-							return;
+							if (!namePhoneRecords) {
+								setPhoneInputPlaceholder(authErrorMessage);
+								clearFuzzySearchBadges();
+								alert(authErrorMessage);
+								return;
+							}
+
+							setPhoneInputPlaceholder("Google 更新失敗，改用舊快取搜尋");
 						}
 					}
 
