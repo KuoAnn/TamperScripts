@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.5
+// @version      1.26.0910.6
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -202,7 +202,8 @@
 		.booking-modal {
 			display: none;
 			position: fixed;
-			z-index: 9999;
+			/* 站方 modal 最高到 10007,需疊在其上 */
+			z-index: 10400;
 			left: 0;
 			top: 0;
 			width: 100%;
@@ -385,6 +386,19 @@
 		.fuzzy-search-badge:hover:not(:disabled) {
 			background-color: var(--tk-primary-border);
 		}
+		/* 設定按鈕 (Sheet ID / Client ID 未填時顯示),比照站方 .btn-default */
+		.fuzzy-search-badge.settings-prompt-badge {
+			background-color: var(--tk-surface-head);
+			border-color: #cccccc;
+			color: #333333;
+			width: 100%;
+			padding: 8px 12px;
+			font-size: 13px;
+			font-weight: 600;
+		}
+		.fuzzy-search-badge.settings-prompt-badge:hover:not(:disabled) {
+			background-color: #e6e6e6;
+		}
 		/* Google 授權按鈕 (彈窗必須由使用者點擊觸發,故獨立顯示) */
 		.fuzzy-search-badge.google-auth-badge {
 			background-color: var(--tk-danger);
@@ -410,10 +424,11 @@
 		.google-auth-hint:empty {
 			display: none;
 		}
+		/* 設定視窗需壓過站方所有 modal (最高 10007) 與本腳本的上課紀錄彈窗 */
 		.settings-modal {
 			display: none;
 			position: fixed;
-			z-index: 10000;
+			z-index: 10500;
 			left: 0;
 			top: 0;
 			width: 100%;
@@ -625,8 +640,27 @@
 
 		document.body.appendChild(modal);
 
+		// 站方 modal 的 z-index 由後台樣式覆寫過 (目前最高 10007),
+		// 從「會員查詢」裡開啟設定時若層級不夠會被蓋住,故依當下實際值動態疊上去。
+		const topModalZ = Array.from(document.querySelectorAll(".modal, .booking-modal"))
+			.filter((el) => el !== modal && el.offsetParent !== null)
+			.reduce((max, el) => {
+				const z = parseInt(getComputedStyle(el).zIndex, 10);
+				return Number.isNaN(z) ? max : Math.max(max, z);
+			}, 0);
+		if (topModalZ >= 10500) {
+			modal.style.zIndex = String(topModalZ + 10);
+		}
+
 		// 顯示 modal
 		modal.style.display = "block";
+
+		// Bootstrap 3 的 modal 會做焦點鎖定 (enforceFocus),焦點跑到它外面就會被搶回去,
+		// 導致設定視窗的輸入框打不了字。在設定視窗開啟期間攔下這些 focusin 事件。
+		const focusGuard = (event) => {
+			if (modal.contains(event.target)) event.stopPropagation();
+		};
+		document.addEventListener("focusin", focusGuard, true);
 
 		// 關閉按鈕事件
 		const closeBtn = modal.querySelector(".settings-modal-close");
@@ -634,6 +668,7 @@
 		const saveBtn = modal.querySelector("#settings-save");
 
 		const closeModal = () => {
+			document.removeEventListener("focusin", focusGuard, true);
 			modal.style.display = "none";
 			setTimeout(() => modal.remove(), 300);
 		};
@@ -1933,6 +1968,37 @@
 	 * 初始化會員查詢模糊搜尋功能
 	 */
 	/**
+	 * 顯示「前往設定」按鈕 (Google Sheet ID / OAuth Client ID 未填時)
+	 * 直接在會員查詢視窗內提供入口,免得使用者得自己去找腳本選單
+	 */
+	function showSettingsPrompt() {
+		clearFuzzySearchBadges();
+
+		const searchInputArea = document.querySelector("#search_input_area");
+		if (!searchInputArea) return;
+
+		const container = GM_addElement(searchInputArea, "div", {
+			class: "fuzzy-search-badge-container",
+		});
+
+		const settingsBtn = GM_addElement(container, "button", {
+			// 此區塊位於 form#modal_search_form 內,不指定 type 會變成 submit
+			type: "button",
+			class: "fuzzy-search-badge settings-prompt-badge",
+			textContent: "⚙ 點此設定 Google Sheet ID 與 OAuth Client ID",
+		});
+
+		GM_addElement(container, "div", {
+			class: "google-auth-hint",
+			textContent: "設定完成後才能使用姓名模糊搜尋",
+		});
+
+		settingsBtn.addEventListener("click", () => {
+			showSettingsModal();
+		});
+	}
+
+	/**
 	 * 顯示「授權 Google」按鈕。
 	 *
 	 * 不能在輸入事件的 async 流程中自動呼叫 requestAccessToken(),
@@ -2059,9 +2125,9 @@
 				if (namePhoneRecords && !searchDataNeedsRefresh) return true;
 
 				if (!googleSheetState.sheetId || !googleSheetState.clientId) {
-					statusMessage = "請先由腳本選單的「設定」填入 Google Sheet ID 與 OAuth Client ID";
+					statusMessage = "尚未設定 Google Sheet ID / OAuth Client ID";
 					setPhoneInputPlaceholder(statusMessage);
-					clearFuzzySearchBadges();
+					showSettingsPrompt();
 					return false;
 				}
 
