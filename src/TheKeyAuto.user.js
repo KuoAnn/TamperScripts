@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.6
+// @version      1.26.0910.7
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -590,6 +590,56 @@
 	}
 
 	/**
+	 * 暫時卸下站方綁在 document 上的焦點鎖定,讓腳本的彈窗可以正常輸入。
+	 *
+	 * 站方那個 handler 是手抄的 Bootstrap enforceFocus (jQuery namespace 為 modal),
+	 * 綁在閉包內,無法從 modal 實例停用,只能整個 off 掉再還原。
+	 *
+	 * @param {HTMLElement} ownModal 腳本自己的彈窗 (jQuery 不可用時的 fallback 需要)
+	 * @returns {Function} 還原用的函式
+	 */
+	function suspendSiteFocusTrap(ownModal) {
+		const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+		const $ = pageWindow.jQuery;
+
+		if ($ && typeof $._data === "function") {
+			try {
+				const documentEvents = $._data(document, "events");
+				const focusinHandlers = (documentEvents && documentEvents.focusin) || [];
+				// 只動 namespace 為 modal 的,別牽連 bs.button.data-api 之類的其他 handler
+				const removed = focusinHandlers
+					.filter((entry) => entry.namespace === "modal")
+					.map((entry) => ({ handler: entry.handler, selector: entry.selector }));
+
+				if (removed.length > 0) {
+					$(document).off("focusin.modal");
+					console.log(`已暫時卸下站方的焦點鎖定 (${removed.length} 個 handler)`);
+
+					return () => {
+						removed.forEach((entry) => {
+							if (entry.selector) {
+								$(document).on("focusin.modal", entry.selector, entry.handler);
+							} else {
+								$(document).on("focusin.modal", entry.handler);
+							}
+						});
+						console.log("已還原站方的焦點鎖定");
+					};
+				}
+			} catch (err) {
+				console.warn("卸下站方焦點鎖定失敗，改用備援方式:", err);
+			}
+		}
+
+		// 備援: 攔下自家彈窗內的 focusin,避免它冒泡到站方的 handler
+		const focusGuard = (event) => {
+			if (ownModal.contains(event.target)) event.stopPropagation();
+		};
+		document.addEventListener("focusin", focusGuard, true);
+		return () => document.removeEventListener("focusin", focusGuard, true);
+	}
+
+	/**
 	 * 顯示統一設定彈窗 (包含帳號密碼與 Google Sheets OAuth 設定)
 	 */
 	async function showSettingsModal() {
@@ -655,12 +705,12 @@
 		// 顯示 modal
 		modal.style.display = "block";
 
-		// Bootstrap 3 的 modal 會做焦點鎖定 (enforceFocus),焦點跑到它外面就會被搶回去,
-		// 導致設定視窗的輸入框打不了字。在設定視窗開啟期間攔下這些 focusin 事件。
-		const focusGuard = (event) => {
-			if (modal.contains(event.target)) event.stopPropagation();
-		};
-		document.addEventListener("focusin", focusGuard, true);
+		// 站方在 document 上綁了自己的焦點鎖定 (jQuery namespace 為 modal,非 bs.modal),
+		// 只要焦點落到它認定的 modal 之外就會被搶回去,導致設定視窗的輸入框點不到、打不了字:
+		//   function (e) { if (modal_this.$element[0] !== e.target && !modal_this.$element.has(e.target).length
+		//                      && !$(e.target.parentNode).hasClass("cke_dialog_ui_input_text") ...) modal_this.$element.focus(); }
+		// 該 handler 綁在閉包裡,無法從 modal 實例關閉,只能在設定視窗開啟期間整個卸下再還原。
+		const releaseFocusTrap = suspendSiteFocusTrap(modal);
 
 		// 關閉按鈕事件
 		const closeBtn = modal.querySelector(".settings-modal-close");
@@ -668,7 +718,7 @@
 		const saveBtn = modal.querySelector("#settings-save");
 
 		const closeModal = () => {
-			document.removeEventListener("focusin", focusGuard, true);
+			releaseFocusTrap();
 			modal.style.display = "none";
 			setTimeout(() => modal.remove(), 300);
 		};
