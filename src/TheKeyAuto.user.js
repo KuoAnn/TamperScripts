@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.4
+// @version      1.26.0910.5
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -113,65 +113,92 @@
 		return !!(googleSheetState.cachedData && Date.now() - googleSheetState.cachedDataTime < GOOGLE_SHEET_CACHE_MAX_AGE);
 	}
 
-	// 加入表格樣式
+	// 樣式一律取自站方 Bootstrap 3 主題的實際 token,避免腳本插入的元件與原站風格不一致
 	GM_addStyle(`
+		:root {
+			/* 站方主題色 (取自 .btn-* / .label-* 的 computed style) */
+			--tk-primary: #5d8fc2;
+			--tk-primary-border: #4a82bb;
+			--tk-danger: #dd5826;
+			--tk-danger-border: #ca4e20;
+			--tk-warning: #f0b518;
+			--tk-warning-border: #e0a70f;
+			--tk-success: #64bd63;
+			--tk-success-border: #52b551;
+			--tk-muted: #999999;
+			/* 中性色 */
+			--tk-text: #555555;
+			--tk-surface: #ffffff;
+			--tk-surface-alt: #fafbfc;
+			--tk-surface-head: #f8f8f8;
+			--tk-border: #e8eaed;
+			--tk-input-border: #d6dcea;
+			--tk-input-text: #2f3b52;
+			/* 由主題色調出的列底色 */
+			--tk-warning-soft: #fdf4dc;
+			--tk-danger-soft: #fbe7de;
+			/* 圓角與陰影 */
+			--tk-radius: 4px;
+			--tk-radius-sm: 3px;
+			--tk-radius-label: 2.75px;
+			--tk-radius-input: 2px;
+			--tk-radius-modal: 6px;
+			--tk-shadow-modal: 0 5px 15px rgba(0, 0, 0, 0.5);
+			--tk-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.03);
+		}
 		.booking-list-table {
 			width: 100%;
 			margin-top: 12px;
 			border-collapse: collapse;
-			background: white;
-			box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+			background: var(--tk-surface);
+			box-shadow: var(--tk-shadow-card);
 		}
 		.booking-list-table th,
 		.booking-list-table td {
 			padding: 10px;
 			text-align: center;
-			border: 1px solid #ddd;
+			border: 1px solid var(--tk-border);
 			font-size: 14px;
+			color: var(--tk-text);
+			font-weight: 300;
 		}
 		.booking-list-table th {
-			background-color: #f5f5f5;
-			font-weight: bold;
-			color: #333;
+			background-color: var(--tk-surface-head);
+			font-weight: 600;
+			color: var(--tk-text);
 			text-align: center;
 		}
+		.booking-list-table tr:nth-child(even) {
+			background: var(--tk-surface-alt);
+		}
 		.booking-list-table tr:hover {
-			background-color: #f9f9f9;
+			background-color: #f2f5f9;
 		}
 		.booking-list-table .status-late_cancel {
-			background-color: #fff9c4 !important;
-			color: #c62828;
-			font-weight: bold;
+			background-color: var(--tk-warning-soft) !important;
+			color: var(--tk-warning-border);
+			font-weight: 600;
 		}
 		.booking-list-table tr.late-cancel-row {
-			background-color: #fff9c4 !important;
+			background-color: var(--tk-warning-soft) !important;
 		}
 		.booking-list-table tr.no-show-row {
-			background-color: #ffcdd2 !important;
+			background-color: var(--tk-danger-soft) !important;
 		}
 		.booking-list-table .status-check_in {
-			color: #2e7d32;
+			color: var(--tk-success-border);
 		}
 		.booking-list-table .status-reserved {
-			color: #1565c0;
+			color: var(--tk-primary-border);
 		}
 		.booking-list-container {
 			margin-top: 12px;
 		}
 		.booking-list-title {
-			font-size: 16px;
-			font-weight: bold;
-			margin-bottom: 10px;
 			margin-top: 6px;
-			color: #333;
+			margin-bottom: 10px;
 			cursor: pointer;
-			text-decoration: underline;
-			color: #007bff;
 		}
-		.booking-list-title:hover {
-			color: #0056b3;
-		}
-		.booking-list-table tr:nth-child(even) { background: #e6f3ff; }
 		.booking-modal {
 			display: none;
 			position: fixed;
@@ -181,17 +208,18 @@
 			width: 100%;
 			height: 100%;
 			overflow: auto;
-			background-color: rgba(0,0,0,0.7);
+			/* 對齊站方 .modal-backdrop: #000 @ .5 */
+			background-color: rgba(0, 0, 0, 0.5);
 		}
 		.booking-modal-content {
-			background-color: #fefefe;
+			background-color: var(--tk-surface);
 			margin: 2% auto;
 			padding: 20px;
-			border: 1px solid #888;
+			border: 1px solid rgba(0, 0, 0, 0.2);
 			width: 95%;
 			max-width: 1400px;
-			border-radius: 8px;
-			box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+			border-radius: var(--tk-radius-modal);
+			box-shadow: var(--tk-shadow-modal);
 			max-height: 90vh;
 			overflow-y: auto;
 		}
@@ -200,138 +228,140 @@
 			justify-content: space-between;
 			align-items: center;
 			margin-bottom: 20px;
-			border-bottom: 2px solid #007bff;
-			padding-bottom: 10px;
+			border-bottom: 1px solid #e5e5e5;
+			padding-bottom: 15px;
 		}
 		.booking-modal-header h2 {
 			margin: 0;
-			color: #333;
-			font-size: 24px;
+			/* 對齊站方 .modal-title: 18px / 300 */
+			color: var(--tk-text);
+			font-size: 18px;
+			font-weight: 300;
 		}
-		.booking-modal-close {
-			color: #aaa;
-			font-size: 32px;
-			font-weight: bold;
+		/* 對齊站方 .close */
+		.booking-modal-close,
+		.settings-modal-close {
+			color: #000;
+			opacity: 0.2;
+			font-size: 21px;
+			font-weight: 700;
+			line-height: 1;
+			text-shadow: 0 1px 0 #fff;
 			cursor: pointer;
-			transition: color 0.2s;
+			transition: opacity 0.15s;
 		}
 		.booking-modal-close:hover,
-		.booking-modal-close:focus {
-			color: #000;
+		.booking-modal-close:focus,
+		.settings-modal-close:hover,
+		.settings-modal-close:focus {
+			opacity: 0.5;
 		}
 		.action-buttons {
 			display: flex;
-			gap: 8px;
+			gap: 6px;
 			flex-direction: row;
 			justify-content: center;
 		}
+		/* 對齊站方 .btn.btn-xs */
 		.action-btn {
-			padding: 6px 12px;
-			border: none;
-			border-radius: 4px;
-			font-size: 13px;
+			padding: 3px 8px;
+			border: 1px solid transparent;
+			border-radius: var(--tk-radius-sm);
+			font-size: 12px;
+			line-height: 1.5;
 			cursor: pointer;
-			transition: all 0.2s;
-			font-weight: 500;
-		}
-		.action-btn:hover {
-			opacity: 0.8;
-			transform: translateY(-1px);
-		}
-		.action-btn:active {
-			transform: translateY(0);
+			font-weight: 400;
+			color: #fff;
 		}
 		.action-btn-checkin {
-			background-color: #4caf50;
-			color: white;
+			background-color: var(--tk-success);
+			border-color: var(--tk-success-border);
 		}
-		.action-btn-checkin:hover {
-			background-color: #45a049;
+		.action-btn-checkin:hover:not(:disabled) {
+			background-color: var(--tk-success-border);
 		}
 		.action-btn-cancel {
-			background-color: #ff9800;
-			color: white;
+			background-color: var(--tk-warning);
+			border-color: var(--tk-warning-border);
 		}
-		.action-btn-cancel:hover {
-			background-color: #fb8c00;
+		.action-btn-cancel:hover:not(:disabled) {
+			background-color: var(--tk-warning-border);
 		}
 		.action-btn:disabled {
-			opacity: 0.5;
+			opacity: 0.65;
 			cursor: not-allowed;
-			transform: none;
 		}
+		/* 對齊站方 .btn.btn-sm */
 		.quick-location-buttons {
 			margin-top: 10px;
 			display: flex;
 			flex-wrap: wrap;
-			gap: 8px;
+			gap: 6px;
 		}
 		.quick-location-btn {
-			padding: 8px 16px;
-			background-color: #5d8fc2;
-			color: white;
-			border: none;
-			border-radius: 4px;
-			font-size: 13px;
+			padding: 5px 10px;
+			background-color: var(--tk-primary);
+			color: #fff;
+			border: 1px solid var(--tk-primary-border);
+			border-radius: var(--tk-radius-sm);
+			font-size: 12px;
+			line-height: 1.5;
 			cursor: pointer;
-			transition: all 0.2s;
-			font-weight: 500;
+			font-weight: 400;
 		}
 		.quick-location-btn:hover {
-			background-color: #0056b3;
-			transform: translateY(-1px);
+			background-color: var(--tk-primary-border);
 		}
-		.quick-location-btn:active {
-			transform: translateY(0);
-		}
-		/* 導覽列的三館快速切換 (取代原本的「切換場館」按鈕) */
+		/* 導覽列的三館快速切換 (取代原本的「切換場館」按鈕),對齊站方 .btn.btn-sm */
 		.navbar-location-switch {
 			display: inline-flex;
 			gap: 6px;
 			vertical-align: middle;
 		}
 		.navbar-location-switch-btn {
-			padding: 6px 14px;
-			background-color: #5d8fc2;
+			padding: 5px 12px;
+			background-color: var(--tk-primary);
 			color: #fff;
-			border: 1px solid transparent;
-			border-radius: 4px;
-			font-size: 13px;
-			line-height: 1.4;
+			border: 1px solid var(--tk-primary-border);
+			border-radius: var(--tk-radius-sm);
+			font-size: 12px;
+			line-height: 1.5;
 			cursor: pointer;
-			transition: all 0.2s;
-			font-weight: 500;
+			font-weight: 400;
 			white-space: nowrap;
 		}
 		.navbar-location-switch-btn:hover:not(:disabled) {
-			background-color: #0056b3;
+			background-color: var(--tk-primary-border);
 		}
 		.navbar-location-switch-btn.is-current {
-			background-color: #d9534f;
+			background-color: var(--tk-danger);
+			border-color: var(--tk-danger-border);
 			cursor: default;
-			font-weight: 700;
+			font-weight: 600;
 		}
 		.navbar-location-switch-btn:disabled {
-			opacity: 0.6;
+			opacity: 0.65;
 			cursor: progress;
 		}
+		/* 對齊站方 .label (會籍卡片的狀態同樣是 .label) */
 		.membership-status-badge {
 			display: inline-block;
-			padding: 4px 12px;
-			margin-left: 10px;
-			border-radius: 12px;
-			font-size: 13px;
-			font-weight: 500;
-			color: white;
+			padding: 3px 8px 4px;
+			margin-left: 8px;
+			border-radius: var(--tk-radius-label);
+			font-size: 12px;
+			font-weight: 600;
+			line-height: 1;
+			color: #fff;
 		}
 		.membership-status-badge.status-active {
-			background-color: #4caf50;
+			background-color: var(--tk-success);
 		}
 		.membership-status-badge.status-suspended {
-			background-color: #b4461c;
+			background-color: var(--tk-danger);
 		}
 		.membership-status-badge.status-default {
-			background-color: #9e9e9e;
+			background-color: var(--tk-muted);
 		}
 		.fuzzy-search-badge-container {
 			margin-top: 8px;
@@ -339,43 +369,42 @@
 			flex-wrap: wrap;
 			gap: 6px;
 		}
+		/* 對齊站方 .btn.btn-sm */
 		.fuzzy-search-badge {
 			display: inline-block;
-			padding: 6px 12px;
-			background-color: #007bff;
-			color: white;
-			border-radius: 4px;
-			font-size: 13px;
+			padding: 5px 10px;
+			background-color: var(--tk-primary);
+			color: #fff;
+			border: 1px solid var(--tk-primary-border);
+			border-radius: var(--tk-radius-sm);
+			font-size: 12px;
+			line-height: 1.5;
+			font-weight: 400;
 			cursor: pointer;
-			transition: all 0.2s;
-			border: none;
 		}
-		.fuzzy-search-badge:hover {
-			background-color: #0056b3;
-			transform: translateY(-1px);
-		}
-		.fuzzy-search-badge:active {
-			transform: translateY(0);
+		.fuzzy-search-badge:hover:not(:disabled) {
+			background-color: var(--tk-primary-border);
 		}
 		/* Google 授權按鈕 (彈窗必須由使用者點擊觸發,故獨立顯示) */
 		.fuzzy-search-badge.google-auth-badge {
-			background-color: #d9534f;
+			background-color: var(--tk-danger);
+			border-color: var(--tk-danger-border);
 			width: 100%;
-			padding: 10px 12px;
+			padding: 8px 12px;
+			font-size: 13px;
 			font-weight: 600;
 		}
 		.fuzzy-search-badge.google-auth-badge:hover:not(:disabled) {
-			background-color: #c9302c;
+			background-color: var(--tk-danger-border);
 		}
 		.fuzzy-search-badge.google-auth-badge:disabled {
-			opacity: 0.7;
+			opacity: 0.65;
 			cursor: progress;
-			transform: none;
 		}
 		.google-auth-hint {
 			width: 100%;
 			font-size: 12px;
-			color: #c62828;
+			color: var(--tk-danger);
 			line-height: 1.5;
 		}
 		.google-auth-hint:empty {
@@ -393,56 +422,48 @@
 			background-color: rgba(0, 0, 0, 0.5);
 		}
 		.settings-modal-content {
-			background-color: #fefefe;
+			background-color: var(--tk-surface);
 			margin: 10px auto;
-			padding: 30px;
-			border: 1px solid #888;
-			border-radius: 8px;
+			padding: 20px;
+			border: 1px solid rgba(0, 0, 0, 0.2);
+			border-radius: var(--tk-radius-modal);
 			width: 90%;
 			max-width: 500px;
-			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+			box-shadow: var(--tk-shadow-modal);
 		}
 		.settings-modal-header {
 			display: flex;
 			justify-content: space-between;
 			align-items: center;
 			margin-bottom: 20px;
-			border-bottom: 2px solid #007bff;
-			padding-bottom: 10px;
+			border-bottom: 1px solid #e5e5e5;
+			padding-bottom: 15px;
 		}
 		.settings-modal-header h3 {
 			margin: 0;
-			color: #333;
-			font-size: 20px;
-		}
-		.settings-modal-close {
-			color: #aaa;
-			font-size: 28px;
-			font-weight: bold;
-			cursor: pointer;
-			transition: color 0.2s;
-		}
-		.settings-modal-close:hover,
-		.settings-modal-close:focus {
-			color: #000;
+			color: var(--tk-text);
+			font-size: 18px;
+			font-weight: 300;
 		}
 		.settings-form-group {
-			margin-bottom: 20px;
+			margin-bottom: 18px;
 		}
 		.settings-form-group label {
 			display: block;
-			margin-bottom: 8px;
-			font-weight: 500;
-			color: #333;
-			font-size: 14px;
+			margin-bottom: 6px;
+			font-weight: 600;
+			color: var(--tk-text);
+			font-size: 13px;
 		}
+		/* 對齊站方 .form-control */
 		.settings-form-group input,
 		.settings-form-group textarea {
 			width: 100%;
-			padding: 10px;
-			border: 1px solid #ddd;
-			border-radius: 4px;
-			font-size: 14px;
+			padding: 6px 12px;
+			border: 1px solid var(--tk-input-border);
+			border-radius: var(--tk-radius-input);
+			font-size: 12px;
+			color: var(--tk-input-text);
 			box-sizing: border-box;
 			font-family: inherit;
 		}
@@ -453,43 +474,46 @@
 		.settings-form-group input:focus,
 		.settings-form-group textarea:focus {
 			outline: none;
-			border-color: #007bff;
-			box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
+			border-color: var(--tk-primary);
+			box-shadow: 0 0 0 2px rgba(93, 143, 194, 0.15);
 		}
 		.settings-form-hint {
 			margin-top: 6px;
 			font-size: 12px;
-			color: #666;
+			color: var(--tk-muted);
 			line-height: 1.5;
 		}
 		.settings-form-actions {
 			display: flex;
-			gap: 10px;
+			gap: 8px;
 			justify-content: flex-end;
 			margin-top: 25px;
 		}
+		/* 對齊站方 .btn */
 		.settings-btn {
-			padding: 10px 20px;
-			border: none;
-			border-radius: 4px;
+			padding: 6px 12px;
+			border: 1px solid transparent;
+			border-radius: var(--tk-radius);
 			font-size: 14px;
+			line-height: 1.5;
 			cursor: pointer;
-			transition: all 0.2s;
-			font-weight: 500;
+			font-weight: 400;
 		}
 		.settings-btn-primary {
-			background-color: #007bff;
-			color: white;
+			background-color: var(--tk-primary);
+			border-color: var(--tk-primary-border);
+			color: #fff;
 		}
 		.settings-btn-primary:hover {
-			background-color: #0056b3;
+			background-color: var(--tk-primary-border);
 		}
 		.settings-btn-secondary {
-			background-color: #6c757d;
-			color: white;
+			background-color: var(--tk-surface-head);
+			border-color: #cccccc;
+			color: #333333;
 		}
 		.settings-btn-secondary:hover {
-			background-color: #5a6268;
+			background-color: #e6e6e6;
 		}
 	`);
 
