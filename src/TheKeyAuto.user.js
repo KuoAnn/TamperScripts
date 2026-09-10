@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.8
+// @version      1.26.0910.9
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -386,21 +386,22 @@
 			background-color: var(--tk-muted);
 		}
 		.fuzzy-search-badge-container {
-			margin-top: 8px;
+			margin-top: 6px;
 			display: flex;
 			flex-wrap: wrap;
-			gap: 6px;
+			/* 搜尋結果常有十幾筆,排緊一點才不會把查詢視窗撐長 */
+			gap: 4px;
 		}
-		/* 對齊站方 .btn.btn-sm */
+		/* 搜尋結果 badge: 比站方 .btn-sm 大一級,以電話號碼為主要辨識目標 */
 		.fuzzy-search-badge {
 			display: inline-block;
-			padding: 5px 10px;
+			padding: 4px 9px;
 			background-color: var(--tk-primary);
 			color: #fff;
 			border: 1px solid var(--tk-primary-border);
 			border-radius: var(--tk-radius-sm);
-			font-size: 12px;
-			line-height: 1.5;
+			font-size: 14px;
+			line-height: 1.45;
 			font-weight: 400;
 			cursor: pointer;
 		}
