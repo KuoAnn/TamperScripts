@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.11
+// @version      1.26.0910.12
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -1972,13 +1972,70 @@
 	}
 
 	/**
+	 * 以「非連續」方式比對:關鍵字的字元需依序出現,但可以不相鄰。
+	 *
+	 * 先由左往右貪婪找出一組位置,再由右往左把每個字元盡量往後挪。
+	 * 貪婪找到的是最早的一組,不一定最集中;收斂之後跨度最小,
+	 * 排序時比較公平,標示也會落在最集中的那一段上。
+	 *
+	 * @param {string} text 已轉小寫的文字
+	 * @param {string} keyword 已轉小寫的關鍵字
+	 * @returns {number[]|null} 每個關鍵字字元對應的索引;無法完全命中時回傳 null
+	 */
+	function findSubsequenceIndices(text, keyword) {
+		if (!text || !keyword) return null;
+
+		const indices = [];
+		let cursor = 0;
+		for (let k = 0; k < keyword.length; k += 1) {
+			const found = text.indexOf(keyword[k], cursor);
+			if (found < 0) return null;
+			indices.push(found);
+			cursor = found + 1;
+		}
+
+		// 由右往左收斂跨度
+		for (let k = indices.length - 2; k >= 0; k -= 1) {
+			let position = indices[k + 1] - 1;
+			while (position > indices[k] && text[position] !== keyword[k]) position -= 1;
+			if (text[position] === keyword[k]) indices[k] = position;
+		}
+
+		return indices;
+	}
+
+	/**
+	 * 把離散索引合併成連續區間,相鄰的字元併成同一段
+	 * @param {number[]} indices 由小到大的索引
+	 * @returns {Array<[number, number]>} [起, 迄) 區間陣列
+	 */
+	function mergeIndicesToRanges(indices) {
+		const ranges = [];
+		for (const index of indices) {
+			const last = ranges[ranges.length - 1];
+			if (last && last[1] === index) last[1] = index + 1;
+			else ranges.push([index, index + 1]);
+		}
+		return ranges;
+	}
+
+	/**
 	 * 計算單筆資料對關鍵字的相關性。數字越小越相關。
-	 * 依序為: 完全相同 > 開頭符合 > 電話結尾符合 (常見的「報後四碼」) > 包含
+	 *
+	 * 連續比對排在非連續之前,所以放寬成非連續之後,
+	 * 原本會命中的結果仍然排在最前面,只是後面多接了較鬆散的命中。
+	 *
+	 *   0 姓名完全相同        1 電話完全相同
+	 *   2 姓名開頭符合        3 電話開頭符合
+	 *   4 電話結尾符合 (常見的「報後四碼」)
+	 *   5 姓名包含            6 電話包含
+	 *   7 姓名非連續          8 電話非連續
+	 *
 	 * @param {string} name 姓名
 	 * @param {string} phone 電話
 	 * @param {string} keyword 已 trim + 轉小寫的關鍵字
 	 * @param {string} keywordDigits 關鍵字的純數字形式
-	 * @returns {{tier: number, index: number}|null} 不符合時回傳 null
+	 * @returns {{tier: number, index: number, span: number}|null} 不符合時回傳 null
 	 */
 	function scoreMatch(name, phone, keyword, keywordDigits) {
 		const lowerName = name.toLowerCase();
@@ -1986,32 +2043,53 @@
 
 		const nameIndex = lowerName.indexOf(keyword);
 		const phoneIndex = keywordDigits ? phoneDigits.indexOf(keywordDigits) : -1;
-
-		if (nameIndex < 0 && phoneIndex < 0) return null;
-
-		let tier = 99;
-		let index = 99;
+		const candidates = [];
 
 		if (nameIndex >= 0) {
-			if (lowerName === keyword) tier = Math.min(tier, 0);
-			else if (nameIndex === 0) tier = Math.min(tier, 2);
-			else tier = Math.min(tier, 5);
-			index = Math.min(index, nameIndex);
+			const tier = lowerName === keyword ? 0 : nameIndex === 0 ? 2 : 5;
+			candidates.push({ tier, index: nameIndex, span: keyword.length });
+		} else {
+			// 連續比不到才退而求其次
+			const sequence = findSubsequenceIndices(lowerName, keyword);
+			if (sequence) {
+				candidates.push({
+					tier: 7,
+					index: sequence[0],
+					span: sequence[sequence.length - 1] - sequence[0] + 1,
+				});
+			}
 		}
 
 		if (phoneIndex >= 0) {
-			if (phoneDigits === keywordDigits) tier = Math.min(tier, 1);
-			else if (phoneIndex === 0) tier = Math.min(tier, 3);
-			else if (phoneIndex + keywordDigits.length === phoneDigits.length) tier = Math.min(tier, 4);
-			else tier = Math.min(tier, 6);
-			index = Math.min(index, phoneIndex);
+			const tier =
+				phoneDigits === keywordDigits
+					? 1
+					: phoneIndex === 0
+					? 3
+					: phoneIndex + keywordDigits.length === phoneDigits.length
+					? 4
+					: 6;
+			candidates.push({ tier, index: phoneIndex, span: keywordDigits.length });
+		} else if (keywordDigits) {
+			const sequence = findSubsequenceIndices(phoneDigits, keywordDigits);
+			if (sequence) {
+				candidates.push({
+					tier: 8,
+					index: sequence[0],
+					span: sequence[sequence.length - 1] - sequence[0] + 1,
+				});
+			}
 		}
 
-		return { tier, index };
+		if (candidates.length === 0) return null;
+
+		candidates.sort((a, b) => a.tier - b.tier || a.index - b.index || a.span - b.span);
+		return candidates[0];
 	}
 
 	/**
 	 * 模糊搜尋姓名或電話,並依相關性排序。
+	 * 比對含「非連續」命中 (字元依序出現即可,不必相鄰)。
 	 * 只要有命中片段就列出:不限筆數、也不設最短關鍵字,
 	 * 由排序把最相關的推到前面,而不是靠過濾把結果藏起來。
 	 * @param {string} keyword 搜尋關鍵字
@@ -2036,6 +2114,8 @@
 		scored.sort((a, b) => {
 			if (a.tier !== b.tier) return a.tier - b.tier;
 			if (a.index !== b.index) return a.index - b.index;
+			// 非連續命中時跨度越小越集中,視為越相關
+			if (a.span !== b.span) return a.span - b.span;
 			const byName = a.name.localeCompare(b.name, "zh-Hant");
 			if (byName !== 0) return byName;
 			return a.phone.localeCompare(b.phone);
@@ -2045,21 +2125,23 @@
 	}
 
 	/**
-	 * 找出關鍵字在文字中的命中範圍。
-	 * 先直接比對;比不到時改以「只看數字」比對,讓 0912-345-678 這種帶分隔符的
-	 * 電話也能對應回原字串的位置。
+	 * 找出關鍵字在文字中的命中範圍,可能有多段 (非連續命中時)。
+	 *
+	 * 依序嘗試: 連續比對 -> 只看數字的連續比對 -> 非連續比對 -> 只看數字的非連續比對。
+	 * 「只看數字」是為了讓 0912-345-678 這種帶分隔符的電話也能對應回原字串位置。
+	 *
 	 * @param {string} text 原始文字
 	 * @param {string} keyword 關鍵字
-	 * @returns {[number, number]|null} [起, 迄) 索引,找不到回傳 null
+	 * @returns {Array<[number, number]>|null} [起, 迄) 區間陣列,找不到回傳 null
 	 */
-	function findMatchRange(text, keyword) {
+	function findMatchRanges(text, keyword) {
 		if (!text || !keyword) return null;
 
-		const direct = text.toLowerCase().indexOf(keyword.toLowerCase());
-		if (direct >= 0) return [direct, direct + keyword.length];
+		const lowerText = text.toLowerCase();
+		const lowerKeyword = keyword.toLowerCase();
 
-		const keywordDigits = normalizePhoneForSearch(keyword);
-		if (!keywordDigits) return null;
+		const direct = lowerText.indexOf(lowerKeyword);
+		if (direct >= 0) return [[direct, direct + keyword.length]];
 
 		// 建立「數字序位 -> 原字串索引」的對照
 		const digitPositions = [];
@@ -2070,11 +2152,24 @@
 				digits += text[i];
 			}
 		}
+		const keywordDigits = normalizePhoneForSearch(keyword);
 
-		const digitIndex = digits.indexOf(keywordDigits);
-		if (digitIndex < 0) return null;
+		if (keywordDigits) {
+			const digitIndex = digits.indexOf(keywordDigits);
+			if (digitIndex >= 0) {
+				return [[digitPositions[digitIndex], digitPositions[digitIndex + keywordDigits.length - 1] + 1]];
+			}
+		}
 
-		return [digitPositions[digitIndex], digitPositions[digitIndex + keywordDigits.length - 1] + 1];
+		const sequence = findSubsequenceIndices(lowerText, lowerKeyword);
+		if (sequence) return mergeIndicesToRanges(sequence);
+
+		if (keywordDigits) {
+			const digitSequence = findSubsequenceIndices(digits, keywordDigits);
+			if (digitSequence) return mergeIndicesToRanges(digitSequence.map((i) => digitPositions[i]));
+		}
+
+		return null;
 	}
 
 	/**
@@ -2085,21 +2180,25 @@
 	 * @param {string} keyword 關鍵字
 	 */
 	function appendHighlightedText(parent, text, keyword) {
-		const range = findMatchRange(text, keyword);
-		if (!range) {
+		const ranges = findMatchRanges(text, keyword);
+		if (!ranges || ranges.length === 0) {
 			parent.appendChild(document.createTextNode(text));
 			return;
 		}
 
-		const [start, end] = range;
-		if (start > 0) parent.appendChild(document.createTextNode(text.slice(0, start)));
+		let cursor = 0;
+		for (const [start, end] of ranges) {
+			if (start > cursor) parent.appendChild(document.createTextNode(text.slice(cursor, start)));
 
-		const hit = document.createElement("span");
-		hit.className = "fuzzy-hit";
-		hit.textContent = text.slice(start, end);
-		parent.appendChild(hit);
+			const hit = document.createElement("span");
+			hit.className = "fuzzy-hit";
+			hit.textContent = text.slice(start, end);
+			parent.appendChild(hit);
 
-		if (end < text.length) parent.appendChild(document.createTextNode(text.slice(end)));
+			cursor = end;
+		}
+
+		if (cursor < text.length) parent.appendChild(document.createTextNode(text.slice(cursor)));
 	}
 
 	/**
