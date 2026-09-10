@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.9
+// @version      1.26.0910.10
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -33,6 +33,10 @@
 
 	// 導覽列快速切換的三個場館,順序即顯示順序。以場館名稱關鍵字比對下拉選項,不寫死 location_id
 	const NAV_LOCATIONS = ["古亭", "松仁", "林口"];
+
+	// 模糊搜尋的最短關鍵字。台灣手機號碼一律 09 開頭,數字太少會命中幾乎整份名單
+	const MIN_NAME_KEYWORD_LENGTH = 1;
+	const MIN_PHONE_KEYWORD_DIGITS = 3;
 
 	/**
 	 * 站方 2026 改版 (Hypercore -> Hyperwell) 後的 DOM 對照表。
@@ -407,6 +411,24 @@
 		}
 		.fuzzy-search-badge:hover:not(:disabled) {
 			background-color: var(--tk-primary-border);
+		}
+		/*
+		 * 命中片段用粗體加底線標示,不動顏色。
+		 * 若改用反白底色會讓白字的對比從 4.56:1 掉下來,而且 WCAG 1.4.1 也要求
+		 * 不能只靠顏色傳達資訊,粗體與底線本身就是非顏色的區辨方式。
+		 */
+		.fuzzy-search-badge .fuzzy-hit {
+			font-weight: 700;
+			text-decoration: underline;
+			text-underline-offset: 2px;
+			text-decoration-thickness: 2px;
+		}
+		/* 關鍵字太短時的提示 */
+		.fuzzy-search-hint {
+			width: 100%;
+			font-size: 12px;
+			color: var(--tk-muted);
+			line-height: 1.5;
 		}
 		/* 設定按鈕 (Sheet ID / Client ID 未填時顯示),比照站方 .btn-default */
 		.fuzzy-search-badge.settings-prompt-badge {
@@ -1961,10 +1983,83 @@
 	}
 
 	/**
-	 * 模糊搜尋姓名或電話
+	 * 判斷關鍵字是否為「電話模式」(只含數字與常見分隔符)
+	 * @param {string} keyword
+	 * @returns {boolean}
+	 */
+	function isPhoneKeyword(keyword) {
+		return /^[\d\s\-()+]+$/.test(keyword);
+	}
+
+	/**
+	 * 檢查關鍵字長度是否足以搜尋
+	 * 姓名 1 字即可;電話因為全部 09 開頭,少於 3 碼會命中幾乎整份名單
+	 * @param {string} keyword
+	 * @returns {{ok: boolean, message: string}}
+	 */
+	function checkKeywordLength(keyword) {
+		const trimmed = (keyword || "").trim();
+		if (!trimmed) return { ok: false, message: "" };
+
+		if (isPhoneKeyword(trimmed)) {
+			const digits = normalizePhoneForSearch(trimmed);
+			if (digits.length < MIN_PHONE_KEYWORD_DIGITS) {
+				return { ok: false, message: `電話請至少輸入 ${MIN_PHONE_KEYWORD_DIGITS} 碼 (目前 ${digits.length} 碼)` };
+			}
+			return { ok: true, message: "" };
+		}
+
+		if (trimmed.length < MIN_NAME_KEYWORD_LENGTH) {
+			return { ok: false, message: `姓名請至少輸入 ${MIN_NAME_KEYWORD_LENGTH} 個字` };
+		}
+		return { ok: true, message: "" };
+	}
+
+	/**
+	 * 計算單筆資料對關鍵字的相關性。數字越小越相關。
+	 * 依序為: 完全相同 > 開頭符合 > 電話結尾符合 (常見的「報後四碼」) > 包含
+	 * @param {string} name 姓名
+	 * @param {string} phone 電話
+	 * @param {string} keyword 已 trim + 轉小寫的關鍵字
+	 * @param {string} keywordDigits 關鍵字的純數字形式
+	 * @returns {{tier: number, index: number}|null} 不符合時回傳 null
+	 */
+	function scoreMatch(name, phone, keyword, keywordDigits) {
+		const lowerName = name.toLowerCase();
+		const phoneDigits = normalizePhoneForSearch(phone);
+
+		const nameIndex = lowerName.indexOf(keyword);
+		const phoneIndex = keywordDigits ? phoneDigits.indexOf(keywordDigits) : -1;
+
+		if (nameIndex < 0 && phoneIndex < 0) return null;
+
+		let tier = 99;
+		let index = 99;
+
+		if (nameIndex >= 0) {
+			if (lowerName === keyword) tier = Math.min(tier, 0);
+			else if (nameIndex === 0) tier = Math.min(tier, 2);
+			else tier = Math.min(tier, 5);
+			index = Math.min(index, nameIndex);
+		}
+
+		if (phoneIndex >= 0) {
+			if (phoneDigits === keywordDigits) tier = Math.min(tier, 1);
+			else if (phoneIndex === 0) tier = Math.min(tier, 3);
+			else if (phoneIndex + keywordDigits.length === phoneDigits.length) tier = Math.min(tier, 4);
+			else tier = Math.min(tier, 6);
+			index = Math.min(index, phoneIndex);
+		}
+
+		return { tier, index };
+	}
+
+	/**
+	 * 模糊搜尋姓名或電話,並依相關性排序
+	 * 不限制筆數 (使用者要求寧可多顯示也不要漏看)
 	 * @param {string} keyword 搜尋關鍵字
 	 * @param {Array<{name: string, phone: string}>} records 姓名電話資料
-	 * @returns {Array<{name: string, phone: string}>} 搜尋結果陣列
+	 * @returns {Array<{name: string, phone: string}>} 已排序的搜尋結果
 	 */
 	function fuzzySearch(keyword, records) {
 		if (!keyword || !Array.isArray(records)) return [];
@@ -1973,23 +2068,81 @@
 		if (!normalizedKeyword) return [];
 
 		const normalizedKeywordPhone = normalizePhoneForSearch(keyword);
-		const results = [];
+		const scored = [];
 		for (const record of records) {
 			const name = (record?.name || "").toString();
 			const phone = (record?.phone || "").toString();
-			const normalizedPhone = phone.toLowerCase();
-			const normalizedPhoneDigits = normalizePhoneForSearch(phone);
+			const score = scoreMatch(name, phone, normalizedKeyword, normalizedKeywordPhone);
+			if (score) scored.push({ name, phone, ...score });
+		}
 
-			if (
-				name.toLowerCase().includes(normalizedKeyword) ||
-				normalizedPhone.includes(normalizedKeyword) ||
-				(normalizedKeywordPhone && normalizedPhoneDigits.includes(normalizedKeywordPhone))
-			) {
-				results.push({ name, phone });
+		scored.sort((a, b) => {
+			if (a.tier !== b.tier) return a.tier - b.tier;
+			if (a.index !== b.index) return a.index - b.index;
+			const byName = a.name.localeCompare(b.name, "zh-Hant");
+			if (byName !== 0) return byName;
+			return a.phone.localeCompare(b.phone);
+		});
+
+		return scored.map(({ name, phone }) => ({ name, phone }));
+	}
+
+	/**
+	 * 找出關鍵字在文字中的命中範圍。
+	 * 先直接比對;比不到時改以「只看數字」比對,讓 0912-345-678 這種帶分隔符的
+	 * 電話也能對應回原字串的位置。
+	 * @param {string} text 原始文字
+	 * @param {string} keyword 關鍵字
+	 * @returns {[number, number]|null} [起, 迄) 索引,找不到回傳 null
+	 */
+	function findMatchRange(text, keyword) {
+		if (!text || !keyword) return null;
+
+		const direct = text.toLowerCase().indexOf(keyword.toLowerCase());
+		if (direct >= 0) return [direct, direct + keyword.length];
+
+		const keywordDigits = normalizePhoneForSearch(keyword);
+		if (!keywordDigits) return null;
+
+		// 建立「數字序位 -> 原字串索引」的對照
+		const digitPositions = [];
+		let digits = "";
+		for (let i = 0; i < text.length; i += 1) {
+			if (text[i] >= "0" && text[i] <= "9") {
+				digitPositions.push(i);
+				digits += text[i];
 			}
 		}
 
-		return results;
+		const digitIndex = digits.indexOf(keywordDigits);
+		if (digitIndex < 0) return null;
+
+		return [digitPositions[digitIndex], digitPositions[digitIndex + keywordDigits.length - 1] + 1];
+	}
+
+	/**
+	 * 將文字加入節點,命中片段包成 <span class="fuzzy-hit">
+	 * 一律用 textContent 組裝,不碰 innerHTML,避免名單內容被當成標記解析
+	 * @param {HTMLElement} parent 容器
+	 * @param {string} text 原始文字
+	 * @param {string} keyword 關鍵字
+	 */
+	function appendHighlightedText(parent, text, keyword) {
+		const range = findMatchRange(text, keyword);
+		if (!range) {
+			parent.appendChild(document.createTextNode(text));
+			return;
+		}
+
+		const [start, end] = range;
+		if (start > 0) parent.appendChild(document.createTextNode(text.slice(0, start)));
+
+		const hit = document.createElement("span");
+		hit.className = "fuzzy-hit";
+		hit.textContent = text.slice(start, end);
+		parent.appendChild(hit);
+
+		if (end < text.length) parent.appendChild(document.createTextNode(text.slice(end)));
 	}
 
 	/**
@@ -2007,7 +2160,7 @@
 	 * @param {Array<{name: string, phone: string}>} results 搜尋結果
 	 * @param {HTMLElement} inputElement 輸入框元素
 	 */
-	function showFuzzySearchBadges(results, inputElement) {
+	function showFuzzySearchBadges(results, inputElement, keyword = "") {
 		clearFuzzySearchBadges();
 
 		if (!results || results.length === 0) return;
@@ -2021,14 +2174,19 @@
 		});
 
 		// 建立每個 badge
+		const trimmedKeyword = (keyword || "").trim();
 		results.forEach((result) => {
 			const badge = GM_addElement(container, "button", {
 				// 此區塊位於 form#modal_search_form 內,不指定 type 會變成 submit,
 				// 會在下方手動 dispatch submit 之前先觸發一次原生送出
 				type: "button",
 				class: "fuzzy-search-badge",
-				textContent: `${result.name} ${result.phone}`,
 			});
+
+			// 標示命中片段,讓使用者一眼看出這筆是因為姓名還是電話符合
+			appendHighlightedText(badge, result.name, trimmedKeyword);
+			badge.appendChild(document.createTextNode(" "));
+			appendHighlightedText(badge, result.phone, trimmedKeyword);
 
 			badge.addEventListener("click", () => {
 				// 填入電話到 input 欄位
@@ -2060,6 +2218,27 @@
 	 * 顯示「前往設定」按鈕 (Google Sheet ID / OAuth Client ID 未填時)
 	 * 直接在會員查詢視窗內提供入口,免得使用者得自己去找腳本選單
 	 */
+	/**
+	 * 顯示「關鍵字太短」的提示
+	 * placeholder 在輸入框有值時不會顯示,所以必須用實體元素提示
+	 * @param {string} message 提示文字
+	 */
+	function showFuzzySearchHint(message) {
+		clearFuzzySearchBadges();
+		if (!message) return;
+
+		const searchInputArea = document.querySelector("#search_input_area");
+		if (!searchInputArea) return;
+
+		const container = GM_addElement(searchInputArea, "div", {
+			class: "fuzzy-search-badge-container",
+		});
+		GM_addElement(container, "div", {
+			class: "fuzzy-search-hint",
+			textContent: message,
+		});
+	}
+
 	function showSettingsPrompt() {
 		clearFuzzySearchBadges();
 
@@ -2232,8 +2411,8 @@
 				showGoogleAuthPrompt(phoneInput, async () => {
 					await loadSearchData();
 					const keyword = phoneInput.value;
-					if (keyword && keyword.trim() && namePhoneRecords) {
-						showFuzzySearchBadges(fuzzySearch(keyword, namePhoneRecords), phoneInput);
+					if (checkKeywordLength(keyword).ok && namePhoneRecords) {
+						showFuzzySearchBadges(fuzzySearch(keyword, namePhoneRecords), phoneInput, keyword);
 					}
 				});
 				return false;
@@ -2271,18 +2450,25 @@
 						return;
 					}
 
+					// 關鍵字太短就不搜,也不要為此觸發 Google 授權
+					const lengthCheck = checkKeywordLength(keyword);
+					if (!lengthCheck.ok) {
+						showFuzzySearchHint(lengthCheck.message);
+						return;
+					}
+
 					const ready = await ensureReadyForSearch(phoneInput);
 					if (!ready) return;
 
 					// 設定新的計時器 (100ms 防抖)
 					debounceTimer = setTimeout(() => {
 						const latestKeyword = phoneInput.value;
-						if (!latestKeyword || latestKeyword.trim() === "") {
+						if (!checkKeywordLength(latestKeyword).ok) {
 							clearFuzzySearchBadges();
 							return;
 						}
 
-						showFuzzySearchBadges(fuzzySearch(latestKeyword, namePhoneRecords), phoneInput);
+						showFuzzySearchBadges(fuzzySearch(latestKeyword, namePhoneRecords), phoneInput, latestKeyword);
 					}, 100);
 				});
 
