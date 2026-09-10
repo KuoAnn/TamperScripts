@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.10
+// @version      1.26.0910.11
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -33,10 +33,6 @@
 
 	// 導覽列快速切換的三個場館,順序即顯示順序。以場館名稱關鍵字比對下拉選項,不寫死 location_id
 	const NAV_LOCATIONS = ["古亭", "松仁", "林口"];
-
-	// 模糊搜尋的最短關鍵字。台灣手機號碼一律 09 開頭,數字太少會命中幾乎整份名單
-	const MIN_NAME_KEYWORD_LENGTH = 1;
-	const MIN_PHONE_KEYWORD_DIGITS = 3;
 
 	/**
 	 * 站方 2026 改版 (Hypercore -> Hyperwell) 後的 DOM 對照表。
@@ -422,13 +418,6 @@
 			text-decoration: underline;
 			text-underline-offset: 2px;
 			text-decoration-thickness: 2px;
-		}
-		/* 關鍵字太短時的提示 */
-		.fuzzy-search-hint {
-			width: 100%;
-			font-size: 12px;
-			color: var(--tk-muted);
-			line-height: 1.5;
 		}
 		/* 設定按鈕 (Sheet ID / Client ID 未填時顯示),比照站方 .btn-default */
 		.fuzzy-search-badge.settings-prompt-badge {
@@ -1983,39 +1972,6 @@
 	}
 
 	/**
-	 * 判斷關鍵字是否為「電話模式」(只含數字與常見分隔符)
-	 * @param {string} keyword
-	 * @returns {boolean}
-	 */
-	function isPhoneKeyword(keyword) {
-		return /^[\d\s\-()+]+$/.test(keyword);
-	}
-
-	/**
-	 * 檢查關鍵字長度是否足以搜尋
-	 * 姓名 1 字即可;電話因為全部 09 開頭,少於 3 碼會命中幾乎整份名單
-	 * @param {string} keyword
-	 * @returns {{ok: boolean, message: string}}
-	 */
-	function checkKeywordLength(keyword) {
-		const trimmed = (keyword || "").trim();
-		if (!trimmed) return { ok: false, message: "" };
-
-		if (isPhoneKeyword(trimmed)) {
-			const digits = normalizePhoneForSearch(trimmed);
-			if (digits.length < MIN_PHONE_KEYWORD_DIGITS) {
-				return { ok: false, message: `電話請至少輸入 ${MIN_PHONE_KEYWORD_DIGITS} 碼 (目前 ${digits.length} 碼)` };
-			}
-			return { ok: true, message: "" };
-		}
-
-		if (trimmed.length < MIN_NAME_KEYWORD_LENGTH) {
-			return { ok: false, message: `姓名請至少輸入 ${MIN_NAME_KEYWORD_LENGTH} 個字` };
-		}
-		return { ok: true, message: "" };
-	}
-
-	/**
 	 * 計算單筆資料對關鍵字的相關性。數字越小越相關。
 	 * 依序為: 完全相同 > 開頭符合 > 電話結尾符合 (常見的「報後四碼」) > 包含
 	 * @param {string} name 姓名
@@ -2055,8 +2011,9 @@
 	}
 
 	/**
-	 * 模糊搜尋姓名或電話,並依相關性排序
-	 * 不限制筆數 (使用者要求寧可多顯示也不要漏看)
+	 * 模糊搜尋姓名或電話,並依相關性排序。
+	 * 只要有命中片段就列出:不限筆數、也不設最短關鍵字,
+	 * 由排序把最相關的推到前面,而不是靠過濾把結果藏起來。
 	 * @param {string} keyword 搜尋關鍵字
 	 * @param {Array<{name: string, phone: string}>} records 姓名電話資料
 	 * @returns {Array<{name: string, phone: string}>} 已排序的搜尋結果
@@ -2218,27 +2175,6 @@
 	 * 顯示「前往設定」按鈕 (Google Sheet ID / OAuth Client ID 未填時)
 	 * 直接在會員查詢視窗內提供入口,免得使用者得自己去找腳本選單
 	 */
-	/**
-	 * 顯示「關鍵字太短」的提示
-	 * placeholder 在輸入框有值時不會顯示,所以必須用實體元素提示
-	 * @param {string} message 提示文字
-	 */
-	function showFuzzySearchHint(message) {
-		clearFuzzySearchBadges();
-		if (!message) return;
-
-		const searchInputArea = document.querySelector("#search_input_area");
-		if (!searchInputArea) return;
-
-		const container = GM_addElement(searchInputArea, "div", {
-			class: "fuzzy-search-badge-container",
-		});
-		GM_addElement(container, "div", {
-			class: "fuzzy-search-hint",
-			textContent: message,
-		});
-	}
-
 	function showSettingsPrompt() {
 		clearFuzzySearchBadges();
 
@@ -2411,7 +2347,7 @@
 				showGoogleAuthPrompt(phoneInput, async () => {
 					await loadSearchData();
 					const keyword = phoneInput.value;
-					if (checkKeywordLength(keyword).ok && namePhoneRecords) {
+					if (keyword && keyword.trim() && namePhoneRecords) {
 						showFuzzySearchBadges(fuzzySearch(keyword, namePhoneRecords), phoneInput, keyword);
 					}
 				});
@@ -2450,20 +2386,13 @@
 						return;
 					}
 
-					// 關鍵字太短就不搜,也不要為此觸發 Google 授權
-					const lengthCheck = checkKeywordLength(keyword);
-					if (!lengthCheck.ok) {
-						showFuzzySearchHint(lengthCheck.message);
-						return;
-					}
-
 					const ready = await ensureReadyForSearch(phoneInput);
 					if (!ready) return;
 
 					// 設定新的計時器 (100ms 防抖)
 					debounceTimer = setTimeout(() => {
 						const latestKeyword = phoneInput.value;
-						if (!checkKeywordLength(latestKeyword).ok) {
+						if (!latestKeyword || latestKeyword.trim() === "") {
 							clearFuzzySearchBadges();
 							return;
 						}
