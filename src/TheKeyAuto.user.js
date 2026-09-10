@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0531.1
-// @description  自動填入帳號密碼並登入 Hypercore 後台管理系統,自動選擇 THE KEY YOGA 台北古亭館,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
+// @version      1.26.0910.3
+// @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -26,6 +26,53 @@
 	const GOOGLE_SHEET_CACHE_MAX_AGE = 15 * 60 * 1000;
 	const GOOGLE_ACCESS_TOKEN_REFRESH_BUFFER = 5 * 60 * 1000;
 	const GOOGLE_IDENTITY_SCRIPT_URL = "https://accounts.google.com/gsi/client";
+
+	// 登入後預設場館: THE KEY YOGA 台北古亭館 (站方預設為松仁館)
+	const TARGET_LOCATION_NAME = "古亭";
+	const PENDING_LOCATION_SWITCH_KEY = "thekey_pending_location_switch";
+
+	// 導覽列快速切換的三個場館,順序即顯示順序。以場館名稱關鍵字比對下拉選項,不寫死 location_id
+	const NAV_LOCATIONS = ["古亭", "松仁", "林口"];
+
+	/**
+	 * 站方 2026 改版 (Hypercore -> Hyperwell) 後的 DOM 對照表。
+	 * 每個項目都是候選清單,由新到舊依序嘗試,舊選擇器保留以相容尚未改版的環境。
+	 */
+	const SELECTORS = {
+		// 導覽列使用者姓名 (舊: #notifications-dropdown-toggle .navbar_staff_name)
+		staffName: [
+			"#navbar-user-menu-toggle .navbar_staff_name",
+			"#navbar-user-menu-toggle-mobile .navbar_staff_name",
+			".navbar_staff_name",
+			"#notifications-dropdown-toggle .navbar_staff_name",
+		],
+		// 會員摘要區塊插入點 (舊: #member_profile_info .col-md-6:nth-of-type(2))
+		bookListAnchor: [
+			"#member_profile_info .member-summary-actions",
+			"#member_profile_info .member-summary-footer",
+			"#member_profile_info .member-summary-column",
+			"#member_profile_info .widget-body",
+		],
+		// 場館切換下拉 (舊: select#location_id;新 id 為 switch_store_location_id)
+		locationSelect: ['select[name="location_id"]', "select#switch_store_location_id", "select#location_id"],
+		// 會籍列的狀態欄 (舊: td:nth-child(3);新版整列改為單一卡片)
+		packageStatus: [".member-package-card-status", "td:nth-child(3)"],
+	};
+
+	/**
+	 * 依候選清單依序尋找元素
+	 * @param {string[]} selectors 候選 CSS 選擇器
+	 * @param {ParentNode} [root=document] 搜尋根節點
+	 * @returns {Element|null}
+	 */
+	function queryFirst(selectors, root = document) {
+		for (const selector of selectors) {
+			const el = root.querySelector(selector);
+			if (el) return el;
+		}
+		return null;
+	}
+
 	const googleSheetState = {
 		sheetId: "",
 		clientId: "",
@@ -37,8 +84,11 @@
 		initialized: false,
 	};
 	let googleSheetDataLoadingPromise = null;
-	let googleSheetDataLoadingInteractive = false;
 	let googleIdentityScriptPromise = null;
+	// 預先建立的 Google token client (見 prepareGoogleTokenClient 的說明)
+	let googleTokenClient = null;
+	let googleTokenClientKey = "";
+	let googleTokenPending = null;
 
 	function normalizeGoogleSheetRecords(records) {
 		if (!Array.isArray(records)) return null;
@@ -234,6 +284,37 @@
 		.quick-location-btn:active {
 			transform: translateY(0);
 		}
+		/* 導覽列的三館快速切換 (取代原本的「切換場館」按鈕) */
+		.navbar-location-switch {
+			display: inline-flex;
+			gap: 6px;
+			vertical-align: middle;
+		}
+		.navbar-location-switch-btn {
+			padding: 6px 14px;
+			background-color: #5d8fc2;
+			color: #fff;
+			border: 1px solid transparent;
+			border-radius: 4px;
+			font-size: 13px;
+			line-height: 1.4;
+			cursor: pointer;
+			transition: all 0.2s;
+			font-weight: 500;
+			white-space: nowrap;
+		}
+		.navbar-location-switch-btn:hover:not(:disabled) {
+			background-color: #0056b3;
+		}
+		.navbar-location-switch-btn.is-current {
+			background-color: #d9534f;
+			cursor: default;
+			font-weight: 700;
+		}
+		.navbar-location-switch-btn:disabled {
+			opacity: 0.6;
+			cursor: progress;
+		}
 		.membership-status-badge {
 			display: inline-block;
 			padding: 4px 12px;
@@ -282,6 +363,30 @@
 		}
 		.fuzzy-search-badge:active {
 			transform: translateY(0);
+		}
+		/* Google 授權按鈕 (彈窗必須由使用者點擊觸發,故獨立顯示) */
+		.fuzzy-search-badge.google-auth-badge {
+			background-color: #d9534f;
+			width: 100%;
+			padding: 10px 12px;
+			font-weight: 600;
+		}
+		.fuzzy-search-badge.google-auth-badge:hover:not(:disabled) {
+			background-color: #c9302c;
+		}
+		.fuzzy-search-badge.google-auth-badge:disabled {
+			opacity: 0.7;
+			cursor: progress;
+			transform: none;
+		}
+		.google-auth-hint {
+			width: 100%;
+			font-size: 12px;
+			color: #c62828;
+			line-height: 1.5;
+		}
+		.google-auth-hint:empty {
+			display: none;
 		}
 		.settings-modal {
 			display: none;
@@ -440,7 +545,9 @@
 		googleSheetState.cachedData = null;
 		googleSheetState.cachedDataTime = 0;
 		googleSheetDataLoadingPromise = null;
-		googleSheetDataLoadingInteractive = false;
+		googleTokenClient = null;
+		googleTokenClientKey = "";
+		googleTokenPending = null;
 
 		await Promise.all([
 			GM_setValue("google_sheet_cache", ""),
@@ -637,6 +744,56 @@
 		}
 	}
 
+	/**
+	 * 等待候選清單中任一元素出現「且有文字內容」後執行 callback
+	 * 導覽列的使用者姓名是登入後才由站方非同步填入,元素會先於文字存在,
+	 * 只等元素出現會讀到空字串而誤判身分。
+	 * @param {string[]} selectors 候選 CSS 選擇器
+	 * @param {Function} callback 執行函式,參數為找到的元素
+	 * @param {number} [retry=0] 重試次數
+	 * @param {number} [maxRetry=100] 最大重試次數 (100 * 100ms = 10 秒)
+	 */
+	function waitForAnyWithText(selectors, callback, retry = 0, maxRetry = 100, onTimeout = null) {
+		const el = selectors
+			.map((selector) => document.querySelector(selector))
+			.find((candidate) => candidate && candidate.textContent.trim());
+
+		if (el) {
+			callback(el);
+		} else if (retry < maxRetry) {
+			setTimeout(() => waitForAnyWithText(selectors, callback, retry + 1, maxRetry, onTimeout), 100);
+		} else {
+			console.error(`waitForAnyWithText: 超過最大重試次數,未找到有文字的元素 ${selectors.join(" | ")}`);
+			if (onTimeout) onTimeout();
+		}
+	}
+
+	/**
+	 * 輪詢條件直到成立,逾時則呼叫 onTimeout
+	 * 用於等待「元素已存在但內容仍非同步填入」的情況
+	 * @param {Function} condition 回傳 boolean 的判斷式
+	 * @param {Function} onReady 條件成立時執行
+	 * @param {Function} [onTimeout] 逾時時執行
+	 * @param {number} [retry=0] 重試次數
+	 * @param {number} [maxRetry=100] 最大重試次數 (100 * 100ms = 10 秒)
+	 */
+	function waitForConditionOrTimeout(condition, onReady, onTimeout, retry = 0, maxRetry = 100) {
+		let ok = false;
+		try {
+			ok = !!condition();
+		} catch (err) {
+			ok = false;
+		}
+
+		if (ok) {
+			onReady();
+		} else if (retry < maxRetry) {
+			setTimeout(() => waitForConditionOrTimeout(condition, onReady, onTimeout, retry + 1, maxRetry), 100);
+		} else if (onTimeout) {
+			onTimeout();
+		}
+	}
+
 	function getGoogleIdentityApi() {
 		const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
 		const googleIdentity = pageWindow.google;
@@ -677,100 +834,153 @@
 		return googleIdentityScriptPromise;
 	}
 
-	async function getGoogleUserAccessToken(interactive = false) {
+	/**
+	 * 取得目前仍有效的 Google Access Token (不觸發授權流程)
+	 * @returns {string|null}
+	 */
+	function getCachedGoogleAccessToken() {
+		if (googleSheetState.accessToken && Date.now() < googleSheetState.accessTokenExpire - GOOGLE_ACCESS_TOKEN_REFRESH_BUFFER) {
+			return googleSheetState.accessToken;
+		}
+		return null;
+	}
+
+	/**
+	 * 預先載入 GSI 並建立 token client。
+	 *
+	 * 為什麼要預先建立:Google 的 requestAccessToken() 會開彈出視窗,瀏覽器只允許在
+	 * 使用者手勢的「同步」呼叫堆疊中開啟。舊版把它排在 await loadGoogleIdentityScript()
+	 * 之後才呼叫,首次使用時要等 GSI 下載完,手勢已失效,Chrome 會直接擋掉並回報
+	 * error_callback: popup_failed_to_open。改為事先備好 client,實際授權時就能同步呼叫。
+	 *
+	 * @returns {Promise<Object|null>} token client 或 null (設定不完整時)
+	 */
+	async function prepareGoogleTokenClient() {
 		if (!googleSheetState.initialized) {
 			await refreshGoogleSheetState();
 		}
 
-		if (googleSheetState.accessToken && Date.now() < googleSheetState.accessTokenExpire - GOOGLE_ACCESS_TOKEN_REFRESH_BUFFER) {
-			return googleSheetState.accessToken;
-		}
-
-		if (!interactive) {
+		if (!googleSheetState.clientId || !googleSheetState.email) {
 			return null;
 		}
 
-		if (!googleSheetState.clientId) {
-			throw new Error("請先在設定中填入 Google OAuth Client ID");
+		// 設定變更時需重建 client
+		const clientKey = `${googleSheetState.clientId}|${googleSheetState.email}`;
+		if (googleTokenClient && googleTokenClientKey === clientKey) {
+			return googleTokenClient;
 		}
 
-		if (!googleSheetState.email) {
-			throw new Error("請先在設定中填入帳號 (Email)，Google 會使用它作為登入提示");
-		}
-
-		console.log("正在向 Google 取得使用者 Access Token...");
 		await loadGoogleIdentityScript();
 		const googleIdentity = getGoogleIdentityApi();
 
-		return new Promise((resolve, reject) => {
-			const tokenClient = googleIdentity.accounts.oauth2.initTokenClient({
-				client_id: googleSheetState.clientId,
-				scope: GOOGLE_SHEETS_SCOPE,
-				login_hint: googleSheetState.email,
-				callback: async (tokenResponse) => {
-					try {
-						if (!tokenResponse || tokenResponse.error || !tokenResponse.access_token) {
-							const message = tokenResponse?.error_description || tokenResponse?.error || "Google OAuth 未回傳 access token";
-							reject(new Error(message));
-							return;
-						}
+		googleTokenClient = googleIdentity.accounts.oauth2.initTokenClient({
+			client_id: googleSheetState.clientId,
+			scope: GOOGLE_SHEETS_SCOPE,
+			login_hint: googleSheetState.email,
+			callback: async (tokenResponse) => {
+				const waiter = googleTokenPending;
+				googleTokenPending = null;
 
-						const expiresIn = Number(tokenResponse.expires_in) || 3600;
-						googleSheetState.accessToken = tokenResponse.access_token;
-						googleSheetState.accessTokenExpire = Date.now() + expiresIn * 1000;
-
-						await Promise.all([
-							GM_setValue("google_access_token", googleSheetState.accessToken),
-							GM_setValue("google_access_token_expire", googleSheetState.accessTokenExpire),
-						]);
-
-						console.log("成功取得 Google 使用者 Access Token");
-						resolve(googleSheetState.accessToken);
-					} catch (err) {
-						reject(err);
+				try {
+					if (!tokenResponse || tokenResponse.error || !tokenResponse.access_token) {
+						const message = tokenResponse?.error_description || tokenResponse?.error || "Google OAuth 未回傳 access token";
+						waiter?.reject(new Error(message));
+						return;
 					}
-				},
-				error_callback: (error) => {
-					const message = error?.type ? `Google OAuth 失敗: ${error.type}` : "Google OAuth 失敗";
-					reject(new Error(message));
-				},
-			});
 
-			tokenClient.requestAccessToken({
-				prompt: "",
-				login_hint: googleSheetState.email,
-			});
+					const expiresIn = Number(tokenResponse.expires_in) || 3600;
+					googleSheetState.accessToken = tokenResponse.access_token;
+					googleSheetState.accessTokenExpire = Date.now() + expiresIn * 1000;
+
+					await Promise.all([
+						GM_setValue("google_access_token", googleSheetState.accessToken),
+						GM_setValue("google_access_token_expire", googleSheetState.accessTokenExpire),
+					]);
+
+					console.log("成功取得 Google 使用者 Access Token");
+					waiter?.resolve(googleSheetState.accessToken);
+				} catch (err) {
+					waiter?.reject(err);
+				}
+			},
+			error_callback: (error) => {
+				const waiter = googleTokenPending;
+				googleTokenPending = null;
+
+				let message = error?.type ? `Google OAuth 失敗: ${error.type}` : "Google OAuth 失敗";
+				if (error?.type === "popup_failed_to_open") {
+					message = "Google 授權視窗被瀏覽器阻擋，請允許本站的彈出視窗後再點一次授權";
+				} else if (error?.type === "popup_closed") {
+					message = "已取消 Google 授權";
+				}
+
+				console.error("Google OAuth error_callback:", error);
+				waiter?.reject(new Error(message));
+			},
+		});
+		googleTokenClientKey = clientKey;
+		console.log("Google 授權元件已就緒");
+		return googleTokenClient;
+	}
+
+	/**
+	 * 開啟 Google 授權視窗。
+	 * 必須在使用者點擊的同步呼叫堆疊中呼叫 (呼叫前不可有 await),否則彈窗會被瀏覽器阻擋。
+	 * @returns {Promise<string>} access token
+	 */
+	function requestGoogleAccessTokenInteractive() {
+		return new Promise((resolve, reject) => {
+			if (!googleTokenClient) {
+				reject(new Error("Google 授權元件尚未就緒，請稍候再試一次"));
+				return;
+			}
+
+			if (googleTokenPending) {
+				reject(new Error("已有授權流程進行中，請先完成或關閉 Google 授權視窗"));
+				return;
+			}
+
+			googleTokenPending = { resolve, reject };
+
+			try {
+				googleTokenClient.requestAccessToken({
+					prompt: "",
+					login_hint: googleSheetState.email,
+				});
+			} catch (err) {
+				googleTokenPending = null;
+				reject(err);
+			}
 		});
 	}
 
 	/**
-	 * 使用個人 Google 帳號 OAuth 讀取 Google Sheets 資料
-	 * @param {{interactive?: boolean}} [options] 載入選項
-	 * @returns {Promise<Object|null>} 姓名電話對應物件 {姓名: 電話, ...} 或 null
+	 * 使用已取得的 Google Access Token 讀取 Google Sheets 資料。
+	 * 本函式不會觸發授權流程 (授權彈窗只能由使用者點擊同步觸發,
+	 * 見 requestGoogleAccessTokenInteractive)。
+	 * @returns {Promise<Array<{name: string, phone: string}>|null>} 姓名電話資料或 null
+	 * @throws {Error} 讀取失敗時拋出,由呼叫端顯示訊息
 	 */
-	async function fetchGoogleSheetData(options = {}) {
-		const { interactive = false } = options;
+	async function fetchGoogleSheetData() {
+		if (!googleSheetState.initialized) {
+			await refreshGoogleSheetState();
+		}
 
-		try {
-			if (!googleSheetState.initialized) {
-				await refreshGoogleSheetState();
-			}
+		if (!googleSheetState.sheetId) {
+			throw new Error("尚未設定 Google Sheet ID，請由腳本選單的「設定」填入");
+		}
 
-			if (!googleSheetState.sheetId) {
-				console.warn("Google Sheets 設定不完整，請先設定 Sheet ID");
-				return null;
-			}
+		if (hasFreshGoogleSheetCache()) {
+			console.log("使用快取的 Google Sheets 資料");
+			return googleSheetState.cachedData;
+		}
 
-			if (hasFreshGoogleSheetCache()) {
-				console.log("使用快取的 Google Sheets 資料");
-				return googleSheetState.cachedData;
-			}
+		const accessToken = getCachedGoogleAccessToken();
+		if (!accessToken) {
+			throw new Error("尚未取得 Google 授權");
+		}
 
-			const accessToken = await getGoogleUserAccessToken(interactive);
-			if (!accessToken) {
-				console.warn("目前沒有可用的 Google Access Token，等待使用者在首次搜尋時授權");
-				return null;
-			}
+		{
 
 			const sheetName = "TK MB LOG";
 			const range = `${sheetName}!C:D`;
@@ -850,25 +1060,20 @@
 					},
 				});
 			});
-		} catch (err) {
-			console.error("fetchGoogleSheetData 失敗:", err);
-			return null;
 		}
 	}
 
-	async function ensureGoogleSheetDataLoaded(interactive = false) {
+	async function ensureGoogleSheetDataLoaded() {
 		if (hasFreshGoogleSheetCache()) {
 			return googleSheetState.cachedData;
 		}
 
-		if (!googleSheetDataLoadingPromise || (interactive && !googleSheetDataLoadingInteractive)) {
-			googleSheetDataLoadingInteractive = interactive;
-			const loadingPromise = fetchGoogleSheetData({ interactive });
+		if (!googleSheetDataLoadingPromise) {
+			const loadingPromise = fetchGoogleSheetData();
 			googleSheetDataLoadingPromise = loadingPromise;
-			loadingPromise.finally(() => {
+			loadingPromise.catch(() => {}).finally(() => {
 				if (googleSheetDataLoadingPromise === loadingPromise) {
 					googleSheetDataLoadingPromise = null;
-					googleSheetDataLoadingInteractive = false;
 				}
 			});
 		}
@@ -895,31 +1100,243 @@
 
 			emailField.value = email;
 			passwordField.value = password;
+			// 站方改版後改以 jQuery 讀值,補送事件確保框架同步
+			[emailField, passwordField].forEach((field) => {
+				field.dispatchEvent(new Event("input", { bubbles: true }));
+				field.dispatchEvent(new Event("change", { bubbles: true }));
+			});
 
-			// 選擇館別: THE KEY YOGA 台北古亭館 (location_id=117)
-			const locationSelect = document.querySelector('select[name="location_id"]');
-			if (locationSelect) {
-				locationSelect.value = "117";
-				locationSelect.dispatchEvent(new Event("change"));
-			} else {
-				console.warn("找不到館別選擇欄位");
-			}
+			// 站方已將館別下拉自登入表單移除,改為登入後由「切換場館」modal 處理。
+			// 此處只留下旗標,待登入完成後由 autoSwitchLocation() 自動切換。
+			markPendingLocationSwitch();
 
-			// 點擊登入按鈕
-			setTimeout(() => {
+			// 點擊登入按鈕。
+			// 站方新增 reCAPTCHA v3,送出前會等待 grecaptcha 就緒,故此處需等腳本載入完再點,
+			// 並避開「登入失敗次數過多」時被停用的按鈕。
+			waitForRecaptchaReady(() => {
 				const loginButton = document.querySelector("button.sign_in");
 				if (!loginButton) {
 					console.error("找不到登入按鈕");
 					alert("點擊登入按鈕失敗: 找不到登入按鈕");
 					return;
 				}
+				if (loginButton.disabled) {
+					console.warn("登入按鈕目前為停用狀態(可能已被鎖定),略過自動點擊");
+					return;
+				}
 				loginButton.click();
 				console.log("已自動點擊登入按鈕");
-			}, 500);
+			});
 		} catch (err) {
 			console.error("填寫登入表單失敗:", err);
 			alert("填寫登入表單失敗: " + err.message);
 		}
+	}
+
+	/**
+	 * 等待 reCAPTCHA v3 就緒 (或確認其不可用) 後執行 callback
+	 * @param {Function} callback 執行函式
+	 * @param {number} [retry=0] 重試次數
+	 * @param {number} [maxRetry=40] 最大重試次數 (40 * 150ms = 6 秒)
+	 */
+	function waitForRecaptchaReady(callback, retry = 0, maxRetry = 40) {
+		const win = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+		const ready = win.recaptchaReady === true;
+		const unavailable = win.recaptchaFallback === true || typeof win.grecaptcha === "undefined";
+
+		if (ready || (unavailable && retry >= 10)) {
+			// 站方點擊後仍自帶 1 秒延遲,這裡不再額外等待
+			callback();
+			return;
+		}
+
+		if (retry < maxRetry) {
+			setTimeout(() => waitForRecaptchaReady(callback, retry + 1, maxRetry), 150);
+			return;
+		}
+
+		console.warn("reCAPTCHA 未就緒,仍嘗試送出登入");
+		callback();
+	}
+
+	/**
+	 * 標記「下一個頁面要自動切換到預設場館」
+	 * 於登入頁送出登入時呼叫,登入後由 autoSwitchLocation() 消費此旗標
+	 */
+	function markPendingLocationSwitch() {
+		try {
+			sessionStorage.setItem(PENDING_LOCATION_SWITCH_KEY, TARGET_LOCATION_NAME);
+		} catch (err) {
+			console.warn("無法寫入 sessionStorage 旗標:", err);
+		}
+	}
+
+	/**
+	 * 依場館名稱關鍵字從切換場館下拉找出對應選項
+	 * 站方的 location_id 由後端配發,以名稱比對比寫死 id 穩定
+	 * @param {string} keyword 場館名稱關鍵字 (例: "古亭")
+	 * @returns {HTMLOptionElement|null}
+	 */
+	function findLocationOption(keyword) {
+		const select = queryFirst(SELECTORS.locationSelect);
+		if (!select) return null;
+		return Array.from(select.options).find((option) => option.text.includes(keyword)) || null;
+	}
+
+	/**
+	 * 等待場館下拉的選項載入完成 (站方以 AJAX 抓取場館清單)
+	 * @param {Function} callback 參數為下拉元素
+	 * @param {number} [retry=0] 重試次數
+	 * @param {number} [maxRetry=60] 最大重試次數 (60 * 200ms = 12 秒)
+	 */
+	function waitForLocationOptions(callback, retry = 0, maxRetry = 60) {
+		const select = queryFirst(SELECTORS.locationSelect);
+		// 載入中站方會塞一個 value 為空的佔位選項,需排除
+		const ready = select && Array.from(select.options).some((option) => option.value);
+
+		if (ready) {
+			callback(select);
+		} else if (retry < maxRetry) {
+			setTimeout(() => waitForLocationOptions(callback, retry + 1, maxRetry), 200);
+		} else {
+			console.warn("等待場館清單載入逾時");
+		}
+	}
+
+	/**
+	 * 切換場館。直接操作站方的下拉並觸發確認按鈕,不需要先開啟 modal。
+	 * @param {string} locationId 目標 location_id
+	 * @returns {boolean} 是否成功送出切換
+	 */
+	function switchLocation(locationId) {
+		const select = queryFirst(SELECTORS.locationSelect);
+		if (!select) {
+			console.warn("找不到場館下拉,無法切換");
+			return false;
+		}
+
+		select.value = locationId;
+		select.dispatchEvent(new Event("change", { bubbles: true }));
+
+		const confirmBtn = document.querySelector("#change_store");
+		if (!confirmBtn) {
+			console.warn("找不到場館切換確認按鈕 #change_store");
+			return false;
+		}
+
+		confirmBtn.click();
+		return true;
+	}
+
+	/**
+	 * 登入後自動切換至預設場館 (取代舊版登入表單的館別下拉)
+	 * 僅在登入頁送出登入時設定旗標,故一次登入只會執行一次
+	 */
+	function autoSwitchLocation() {
+		let pending;
+		try {
+			pending = sessionStorage.getItem(PENDING_LOCATION_SWITCH_KEY);
+		} catch (err) {
+			return;
+		}
+		if (!pending) return;
+		if (isLoginPage()) return;
+
+		waitForLocationOptions((select) => {
+			const targetOption = findLocationOption(pending);
+			if (!targetOption) {
+				console.warn(`找不到名稱含「${pending}」的場館選項,取消自動切換`);
+				sessionStorage.removeItem(PENDING_LOCATION_SWITCH_KEY);
+				return;
+			}
+
+			// 已經在目標場館就不用切
+			if (select.value === targetOption.value) {
+				console.log(`已在 ${targetOption.text},略過自動切換`);
+				sessionStorage.removeItem(PENDING_LOCATION_SWITCH_KEY);
+				return;
+			}
+
+			// 先清旗標,避免切換後重新載入又觸發一次造成迴圈
+			sessionStorage.removeItem(PENDING_LOCATION_SWITCH_KEY);
+
+			console.log(`自動切換場館至 ${targetOption.text}`);
+			switchLocation(targetOption.value);
+		});
+	}
+
+	/**
+	 * 將導覽列的「切換場館」按鈕換成三館快速切換按鈕 (古亭 / 松仁 / 林口)
+	 * 點擊即直接切換,不需要開啟 modal
+	 */
+	function replaceNavLocationSwitch() {
+		// 導覽列的觸發鈕 (排除行動版側欄的圖示鈕,那個維持原本開 modal 的行為)
+		const originalBtn = Array.from(document.querySelectorAll('[data-target="#modalLocation"]')).find(
+			(btn) => !btn.classList.contains("sidebar-mobile-icon-btn")
+		);
+		if (!originalBtn) return;
+
+		const host = originalBtn.parentElement;
+		if (!host || host.querySelector(".navbar-location-switch")) return;
+
+		waitForLocationOptions((select) => {
+			// 等待期間可能已被其他呼叫插入
+			if (host.querySelector(".navbar-location-switch")) return;
+
+			const container = document.createElement("div");
+			container.className = "navbar-location-switch";
+
+			let inserted = 0;
+			NAV_LOCATIONS.forEach((name) => {
+				const option = findLocationOption(name);
+				if (!option) {
+					console.warn(`找不到名稱含「${name}」的場館選項,略過此按鈕`);
+					return;
+				}
+
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = "navbar-location-switch-btn";
+				btn.textContent = name;
+				btn.title = option.text;
+				btn.setAttribute("data-location-id", option.value);
+
+				// 標示目前所在場館
+				if (select.value === option.value) {
+					btn.classList.add("is-current");
+					btn.title = `${option.text} (目前所在)`;
+				}
+
+				btn.addEventListener("click", () => {
+					if (btn.classList.contains("is-current")) return;
+
+					const buttons = container.querySelectorAll(".navbar-location-switch-btn");
+					buttons.forEach((b) => (b.disabled = true));
+					btn.textContent = "切換中…";
+
+					if (!switchLocation(option.value)) {
+						buttons.forEach((b) => (b.disabled = false));
+						btn.textContent = name;
+						// 退回站方原本的流程,讓使用者手動切
+						alert("自動切換場館失敗,請改用原本的「切換場館」視窗");
+						originalBtn.style.display = "";
+					}
+				});
+
+				container.appendChild(btn);
+				inserted += 1;
+			});
+
+			if (inserted === 0) {
+				console.warn("沒有任何場館按鈕可插入,保留原本的切換場館按鈕");
+				return;
+			}
+
+			// 保留原按鈕但隱藏,切換失敗時可還原
+			originalBtn.style.display = "none";
+			host.appendChild(container);
+			console.log(`已將導覽列切換場館按鈕改為 ${inserted} 館快速切換`);
+		});
 	}
 
 	/**
@@ -950,16 +1367,32 @@
 	 */
 	async function getMemberPhone() {
 		return new Promise((resolve) => {
-			waitForElement("a#phone.phone", () => {
-				const phoneElement = document.querySelector("a#phone.phone");
-				if (phoneElement && phoneElement.textContent.trim()) {
-					resolve(phoneElement.textContent.trim());
-				} else {
-					console.error("找不到會員電話號碼");
+			// 電話是頁面載入後才填入的,元素會先於文字存在。
+			// 只等元素出現會讀到空字串而誤判為「找不到電話」,必須等到有文字。
+			waitForAnyWithText(
+				["a#phone.phone", "#member_phone"],
+				(phoneElement) => resolve(phoneElement.textContent.trim()),
+				0,
+				100,
+				() => {
+					console.error("找不到會員電話號碼 (等待逾時)");
 					resolve(null);
 				}
-			});
+			);
 		});
+	}
+
+	/**
+	 * 取得單一會籍列的狀態文字
+	 * 站方改版後整列改為單一 td 內的卡片版面,狀態移到 .member-package-card-status
+	 * @param {Element} row 會籍表格的 tr
+	 * @returns {string} 狀態文字 (取不到時回傳空字串)
+	 */
+	function getPackageRowStatusText(row) {
+		if (!row) return "";
+		const statusEl = queryFirst(SELECTORS.packageStatus, row);
+		if (statusEl) return statusEl.textContent.trim();
+		return "";
 	}
 
 	/**
@@ -968,12 +1401,24 @@
 	 */
 	async function getMembershipStatus() {
 		return new Promise((resolve) => {
-			// 等待會籍表格載入
-			waitForElement("#member_package .package_list table tbody tr", () => {
-				// 嘗試找到會籍狀態欄位
-				const statusCell = document.querySelector("#member_package .package_list table tbody tr td:nth-child(3)");
-				if (statusCell) {
-					const statusText = statusCell.textContent.trim();
+			const readRows = () => Array.from(document.querySelectorAll("#member_package .package_list table tbody tr"));
+
+			// 等待會籍表格載入。狀態文字同樣是非同步填入,故等到「有狀態文字」為止
+			waitForConditionOrTimeout(
+				() => {
+					const rows = readRows();
+					return rows.length > 0 && rows.some((row) => getPackageRowStatusText(row));
+				},
+				() => {
+					// 優先取「使用中 / 停權中」的列,否則退回第一列
+					const rows = readRows();
+					const primaryRow =
+						rows.find((row) => {
+							const text = getPackageRowStatusText(row);
+							return text.includes("停權中") || text === "使用中";
+						}) || rows[0];
+
+					const statusText = getPackageRowStatusText(primaryRow);
 					let badgeClass = "status-default";
 
 					// 根據狀態文字決定 badge 樣式
@@ -988,11 +1433,12 @@
 						displayText = "停權中";
 					}
 					resolve({ text: displayText, badgeClass: badgeClass });
-				} else {
-					console.log("找不到會籍狀態欄位");
+				},
+				() => {
+					console.log("等待會籍狀態逾時,略過會籍 badge");
 					resolve(null);
 				}
-			});
+			);
 		});
 	}
 
@@ -1007,8 +1453,9 @@
 			let tradeButton = null;
 
 			for (const row of rows) {
-				const statusCell = row.querySelector("td:nth-child(3)");
-				if (statusCell && statusCell.textContent.trim().includes("No show 停權中")) {
+				// 站方改版後狀態不再是固定的第三欄,改讀狀態卡片;仍取不到時退回整列文字比對
+				const statusText = getPackageRowStatusText(row) || row.textContent;
+				if (statusText.includes("No show 停權中")) {
 					// 找到對應的管理按鈕
 					tradeButton = row.querySelector("button.trade_bar");
 					break;
@@ -1340,16 +1787,22 @@
 			return;
 		}
 
-		// 找到第二個 col-md-6
-		const colMd6List = memberProfileSection.querySelectorAll(".col-md-6");
-		if (colMd6List.length < 2) {
-			console.error("找不到第二個 .col-md-6");
+		// 找插入點。站方改版後 #member_profile_info 內已無 .col-md-6,
+		// 版面改為 .member-profile-layout > .member-summary-column,依序退回尋找。
+		let targetCol = queryFirst(SELECTORS.bookListAnchor);
+		if (!targetCol) {
+			// 相容舊版版面
+			const colMd6List = memberProfileSection.querySelectorAll(".col-md-6");
+			targetCol = colMd6List[1] || colMd6List[0] || null;
+		}
+		if (!targetCol) {
+			console.error("找不到上課清單的插入點 (已嘗試: " + SELECTORS.bookListAnchor.join(", ") + ", .col-md-6)");
 			return;
 		}
 
-		const targetCol = colMd6List[1];
-		// 移除舊的 booking-list-title
-		targetCol.querySelectorAll(".booking-list-title").forEach((e) => e.remove());
+		// 移除舊的 booking-list-title (整份文件都清,避免重複插入殘留在不同容器)
+		document.querySelectorAll("#member_profile_info .booking-list-title").forEach((e) => e.remove());
+		document.querySelectorAll("body > .booking-modal").forEach((e) => e.remove());
 
 		// 計算總筆數
 		const totalCount = data?.aaData?.length || 0;
@@ -1407,7 +1860,7 @@
 			if (event.target === modal) modal.style.display = "none";
 		});
 
-		// 插入到第二個 col-md-6 的最下方
+		// 插入到會員摘要區塊的最下方
 		targetCol.appendChild(titleDiv);
 		document.body.appendChild(modal);
 		console.log("預約清單已插入到會員資訊區塊 (彈窗模式)");
@@ -1417,7 +1870,13 @@
 	/**
 	 * 綁定動作按鈕的點擊事件
 	 */
+	let actionButtonEventsBound = false;
+
 	function bindActionButtonEvents() {
+		// 事件委派只需綁一次,重複綁會造成 confirm 跳兩次
+		if (actionButtonEventsBound) return;
+		actionButtonEventsBound = true;
+
 		// 使用事件委派方式處理所有動作按鈕
 		document.addEventListener("click", async function (event) {
 			const target = event.target;
@@ -1570,6 +2029,9 @@
 		// 建立每個 badge
 		results.forEach((result) => {
 			const badge = GM_addElement(container, "button", {
+				// 此區塊位於 form#modal_search_form 內,不指定 type 會變成 submit,
+				// 會在下方手動 dispatch submit 之前先觸發一次原生送出
+				type: "button",
 				class: "fuzzy-search-badge",
 				textContent: `${result.name} ${result.phone}`,
 			});
@@ -1600,16 +2062,77 @@
 	/**
 	 * 初始化會員查詢模糊搜尋功能
 	 */
+	/**
+	 * 顯示「授權 Google」按鈕。
+	 *
+	 * 不能在輸入事件的 async 流程中自動呼叫 requestAccessToken(),
+	 * 因為那時使用者手勢已失效,Chrome 會擋掉彈窗 (error_callback: popup_failed_to_open)。
+	 * 改為請使用者按一下,於 click handler 中同步開啟授權視窗。
+	 *
+	 * @param {HTMLInputElement} phoneInput 電話輸入框
+	 * @param {Function} onAuthorized 授權成功後的 callback
+	 */
+	function showGoogleAuthPrompt(phoneInput, onAuthorized) {
+		clearFuzzySearchBadges();
+
+		const searchInputArea = document.querySelector("#search_input_area");
+		if (!searchInputArea) return;
+
+		const container = GM_addElement(searchInputArea, "div", {
+			class: "fuzzy-search-badge-container",
+		});
+
+		const authBtn = GM_addElement(container, "button", {
+			// 此區塊位於 form#modal_search_form 內,不指定 type 會變成 submit
+			type: "button",
+			class: "fuzzy-search-badge google-auth-badge",
+			textContent: "🔑 點此授權 Google 以啟用姓名搜尋",
+		});
+
+		const hint = GM_addElement(container, "div", {
+			class: "google-auth-hint",
+			textContent: "",
+		});
+
+		authBtn.addEventListener("click", async () => {
+			// 必須「同步」開啟授權視窗,此行之前不可有 await
+			const tokenPromise = requestGoogleAccessTokenInteractive();
+
+			authBtn.disabled = true;
+			authBtn.textContent = "授權中，請於 Google 視窗完成…";
+			hint.textContent = "";
+
+			try {
+				await tokenPromise;
+				authBtn.textContent = "授權成功，載入資料中…";
+				await onAuthorized();
+				clearFuzzySearchBadges();
+			} catch (err) {
+				console.error("Google 授權失敗:", err);
+				authBtn.disabled = false;
+				authBtn.textContent = "🔑 重新授權 Google";
+				hint.textContent = err.message || "Google 授權失敗";
+			}
+		});
+	}
+
+	/**
+	 * 初始化會員查詢模糊搜尋功能
+	 */
 	async function initMemberSearchFuzzySearch() {
 		try {
 			console.log("初始化會員查詢模糊搜尋功能...");
 			await refreshGoogleSheetState();
 
-			const hasFreshCache = hasFreshGoogleSheetCache();
 			let namePhoneRecords = googleSheetState.cachedData;
-			let searchDataNeedsRefresh = !hasFreshCache;
+			let searchDataNeedsRefresh = !hasFreshGoogleSheetCache();
 			let totalCount = countGoogleSheetRecords(namePhoneRecords);
-			let authErrorMessage = "";
+			let statusMessage = "";
+
+			// 預先備好授權元件,讓使用者按下授權時能同步開啟彈窗
+			prepareGoogleTokenClient().catch((err) => {
+				console.warn("預先載入 Google 授權元件失敗:", err);
+			});
 
 			function setPhoneInputPlaceholder(message = "") {
 				const phoneInput = document.querySelector('input[name="search_phone"]');
@@ -1625,23 +2148,70 @@
 					return;
 				}
 
-				phoneInput.placeholder = "請輸入姓名或電話 (首次使用會要求 Google 授權)";
+				phoneInput.placeholder = "請輸入姓名或電話";
 			}
 
-			async function ensureSearchData(interactive = false) {
-				const data = await ensureGoogleSheetDataLoaded(interactive);
-				if (!data) {
+			/**
+			 * 載入 Google Sheets 資料 (需已取得授權)
+			 * @returns {Promise<Array|null>} 資料或 null
+			 */
+			async function loadSearchData() {
+				try {
+					const data = await ensureGoogleSheetDataLoaded();
+					if (!data) {
+						searchDataNeedsRefresh = true;
+						return null;
+					}
+
+					namePhoneRecords = data;
+					searchDataNeedsRefresh = false;
+					totalCount = countGoogleSheetRecords(namePhoneRecords);
+					statusMessage = "";
+					console.log(`已載入 ${totalCount} 筆姓名電話資料`);
+					setPhoneInputPlaceholder();
+					return namePhoneRecords;
+				} catch (err) {
+					console.error("載入 Google Sheets 資料失敗:", err);
 					searchDataNeedsRefresh = true;
+					// 有舊快取就沿用,只是提示更新失敗
+					statusMessage = namePhoneRecords ? "Google 資料更新失敗，改用舊快取搜尋" : err.message;
+					setPhoneInputPlaceholder(statusMessage);
 					return null;
 				}
+			}
 
-				namePhoneRecords = data;
-				searchDataNeedsRefresh = false;
-				totalCount = countGoogleSheetRecords(namePhoneRecords);
-				authErrorMessage = "";
-				console.log(`已載入 ${totalCount} 筆姓名電話資料`);
-				setPhoneInputPlaceholder();
-				return namePhoneRecords;
+			/**
+			 * 確認資料就緒;若缺 Google 授權則顯示授權按鈕並回傳 false
+			 * @param {HTMLInputElement} phoneInput 電話輸入框
+			 * @returns {Promise<boolean>} 是否可以進行搜尋
+			 */
+			async function ensureReadyForSearch(phoneInput) {
+				if (namePhoneRecords && !searchDataNeedsRefresh) return true;
+
+				if (!googleSheetState.sheetId || !googleSheetState.clientId) {
+					statusMessage = "請先由腳本選單的「設定」填入 Google Sheet ID 與 OAuth Client ID";
+					setPhoneInputPlaceholder(statusMessage);
+					clearFuzzySearchBadges();
+					return false;
+				}
+
+				if (getCachedGoogleAccessToken()) {
+					const data = await loadSearchData();
+					if (data) return true;
+					// token 失效時 fetch 會清掉 token,退回顯示授權按鈕
+					if (getCachedGoogleAccessToken()) return !!namePhoneRecords;
+				}
+
+				// 沒有有效 token:顯示授權按鈕 (彈窗必須由使用者點擊觸發)
+				setPhoneInputPlaceholder("需要 Google 授權，請點下方按鈕");
+				showGoogleAuthPrompt(phoneInput, async () => {
+					await loadSearchData();
+					const keyword = phoneInput.value;
+					if (keyword && keyword.trim() && namePhoneRecords) {
+						showFuzzySearchBadges(fuzzySearch(keyword, namePhoneRecords), phoneInput);
+					}
+				});
+				return false;
 			}
 
 			// 等待會員查詢 modal 出現
@@ -1659,62 +2229,35 @@
 				phoneInput.dataset.fuzzySearchBound = "true";
 
 				console.log("找到電話輸入欄位，綁定模糊搜尋事件");
-				setPhoneInputPlaceholder(authErrorMessage);
+				setPhoneInputPlaceholder(statusMessage);
 
 				let debounceTimer = null;
 
 				phoneInput.addEventListener("input", async (event) => {
 					const keyword = event.target.value;
 
-					// 清除之前的計時器
 					if (debounceTimer) {
 						clearTimeout(debounceTimer);
 					}
 
 					if (!keyword || keyword.trim() === "") {
 						clearFuzzySearchBadges();
-						setPhoneInputPlaceholder(authErrorMessage);
+						setPhoneInputPlaceholder(statusMessage);
 						return;
 					}
 
-					if (!namePhoneRecords || searchDataNeedsRefresh) {
-						try {
-							setPhoneInputPlaceholder("Google 授權中，請完成授權後再搜尋...");
-							const loadedData = await ensureSearchData(true);
-							if (!loadedData) {
-								if (!namePhoneRecords) {
-									authErrorMessage = "無法取得 Google Sheets 資料";
-									setPhoneInputPlaceholder(authErrorMessage);
-									clearFuzzySearchBadges();
-									return;
-								}
-
-								authErrorMessage = "Google 資料更新失敗，改用舊快取搜尋";
-								setPhoneInputPlaceholder(authErrorMessage);
-							}
-						} catch (err) {
-							authErrorMessage = err.message || "Google 授權失敗";
-							console.error("載入 Google Sheets 資料失敗:", err);
-							if (!namePhoneRecords) {
-								setPhoneInputPlaceholder(authErrorMessage);
-								clearFuzzySearchBadges();
-								alert(authErrorMessage);
-								return;
-							}
-
-							setPhoneInputPlaceholder("Google 更新失敗，改用舊快取搜尋");
-						}
-					}
+					const ready = await ensureReadyForSearch(phoneInput);
+					if (!ready) return;
 
 					// 設定新的計時器 (100ms 防抖)
 					debounceTimer = setTimeout(() => {
-						if (!keyword || keyword.trim() === "") {
+						const latestKeyword = phoneInput.value;
+						if (!latestKeyword || latestKeyword.trim() === "") {
 							clearFuzzySearchBadges();
 							return;
 						}
 
-						const results = fuzzySearch(keyword, namePhoneRecords);
-						showFuzzySearchBadges(results, phoneInput);
+						showFuzzySearchBadges(fuzzySearch(latestKeyword, namePhoneRecords), phoneInput);
 					}, 100);
 				});
 
@@ -1745,7 +2288,11 @@
 
 			// 立即檢查一次
 			setupFuzzySearch();
-			void ensureSearchData(false);
+
+			// 已有有效授權時直接預載資料,沒有就等使用者按授權按鈕
+			if (getCachedGoogleAccessToken()) {
+				void loadSearchData();
+			}
 		} catch (err) {
 			console.error("初始化會員查詢模糊搜尋失敗:", err);
 		}
@@ -1757,7 +2304,12 @@
 	 * @returns {boolean} 是否為目標使用者
 	 */
 	function isTargetUser(targetNames) {
-		const userNameElement = document.querySelector("#notifications-dropdown-toggle .navbar_staff_name");
+		// 站方改版後 #notifications-dropdown-toggle 已移除,
+		// 使用者姓名改掛在 #navbar-user-menu-toggle / #navbar-user-menu-toggle-mobile 下。
+		// 桌機版與行動版各有一份,其中一份可能尚未填入文字,取第一個有文字的。
+		const userNameElement = SELECTORS.staffName
+			.map((selector) => document.querySelector(selector))
+			.find((candidate) => candidate && candidate.textContent.trim());
 		if (!userNameElement) return false;
 
 		const userName = userNameElement.textContent.trim();
@@ -1778,19 +2330,21 @@
 			const form = document.querySelector("#editor-location");
 			if (!form) return;
 
-			const locationSelect = form.querySelector("select#location_id");
+			// 站方改版後下拉 id 由 location_id 改為 switch_store_location_id,改以 name 為主
+			const locationSelect = queryFirst(SELECTORS.locationSelect, form);
 			if (!locationSelect) {
+				if (retry < 50) setTimeout(() => tryInsertButtons(retry + 1), 100);
+				return;
+			}
+
+			// 選項是 AJAX 載入的,尚未載入完成就先等
+			if (locationSelect.options.length === 0) {
 				if (retry < 50) setTimeout(() => tryInsertButtons(retry + 1), 100);
 				return;
 			}
 
 			// 避免重複插入
 			if (form.querySelector(".quick-location-buttons")) return;
-
-			if (locationSelect.options.length === 0) {
-				if (retry < 50) setTimeout(() => tryInsertButtons(retry + 1), 100);
-				return;
-			}
 
 			const yogaOptions = Array.from(locationSelect.options).filter((option) => option.text.includes("THE KEY YOGA"));
 
@@ -1807,12 +2361,7 @@
 				btn.setAttribute("data-location-id", option.value);
 
 				btn.addEventListener("click", () => {
-					locationSelect.value = option.value;
-					locationSelect.dispatchEvent(new Event("change"));
-					setTimeout(() => {
-						const confirmBtn = form.querySelector("button#change_store");
-						if (confirmBtn) confirmBtn.click();
-					}, 100);
+					switchLocation(option.value);
 				});
 
 				buttonContainer.appendChild(btn);
@@ -1823,38 +2372,86 @@
 		}
 
 		waitForElement("#editor-location", () => tryInsertButtons());
+
+		// 站方每次開啟 modal 都會重新 AJAX 抓場館清單並重建 <option>,
+		// 因此需在 modal 顯示後再檢查一次 (首次載入時選項可能還沒回來)。
+		const locationModal = document.querySelector("#modalLocation");
+		if (locationModal) {
+			locationModal.addEventListener("shown.bs.modal", () => tryInsertButtons());
+			// jQuery 觸發的自訂事件不會冒泡到原生 listener 以外,補一層 MutationObserver 保險
+			const observer = new MutationObserver(() => {
+				if (locationModal.classList.contains("in")) tryInsertButtons();
+			});
+			observer.observe(locationModal, { attributes: true, attributeFilter: ["class"] });
+		}
 	}
 
 	// 主流程
 	registerMenuCommands();
 
+	let fuzzySearchStarted = false;
+
+	async function initFuzzySearchIfTargetUser() {
+		if (fuzzySearchStarted) return;
+		try {
+			const raw = (await GM_getValue("fuzzy_search_usernames", "蔡嘉如,lulu")) || "";
+			const targets = raw.split(",").map((s) => s.trim()).filter(Boolean);
+			if (targets.length > 0 && isTargetUser(targets)) {
+				fuzzySearchStarted = true;
+				console.log("偵測到目標使用者，啟動模糊搜尋功能");
+				initMemberSearchFuzzySearch();
+			} else {
+				console.log("非目標使用者，不啟動模糊搜尋功能");
+			}
+		} catch (err) {
+			console.error("檢查目標使用者失敗:", err);
+		}
+	}
+
 	(async function main() {
 		if (isLoginPage()) {
 			console.log("偵測到登入/登出頁面,啟動自動登入");
+			// 不論是腳本自動登入、手動按登入、或走 Google 登入,都標記登入後要切到預設場館
+			document.addEventListener(
+				"click",
+				(event) => {
+					const target = event.target;
+					if (!target || !target.closest) return;
+					if (target.closest(".sign_in") || target.closest('[href*="c=google_oauth"]')) {
+						markPendingLocationSwitch();
+					}
+				},
+				true
+			);
 			waitForElement("form#login_form", fillLoginForm);
 		} else if (isMemberDetailPage()) {
 			console.log("偵測到會員詳細頁面,啟動遲到取消紀錄檢查");
 			handleMemberDetailPage();
 		}
 
+		// 登入後自動切換到預設場館 (取代舊版登入表單的館別下拉)
+		autoSwitchLocation();
+
+		// 導覽列的「切換場館」改為古亭/松仁/林口三顆直接切換的按鈕
+		replaceNavLocationSwitch();
+
 		addQuickLocationButtons();
 
 		// 檢查使用者身份，若為設定的目標使用者則啟動模糊搜尋功能 (支援多筆，以逗號分隔，不計大小寫)
-		waitForElement("#notifications-dropdown-toggle", () => {
-			(async () => {
-				try {
-					const raw = (await GM_getValue("fuzzy_search_usernames", "蔡嘉如,lulu")) || "";
-					const targets = raw.split(",").map((s) => s.trim()).filter(Boolean);
-					if (targets.length > 0 && isTargetUser(targets)) {
-						console.log("偵測到目標使用者，啟動模糊搜尋功能");
-						initMemberSearchFuzzySearch();
-					} else {
-						console.log("非目標使用者，不啟動模糊搜尋功能");
-					}
-				} catch (err) {
-					console.error("檢查目標使用者失敗:", err);
-				}
-			})();
+		// 站方改版後入口元素由 #notifications-dropdown-toggle 改為 .navbar_staff_name。
+		// 姓名為非同步填入,必須等到有文字才判斷身分,否則會讀到空字串誤判為非目標使用者。
+		waitForAnyWithText(SELECTORS.staffName, () => {
+			void initFuzzySearchIfTargetUser();
+		});
+
+		// 站方導覽列已啟用 jquery-pjax (PJAX_ENABLED)，側邊選單換頁只會抽換 #content，
+		// 不會重新執行 userscript。這裡在 pjax 結束後重掛需要依附 #content 的功能。
+		document.addEventListener("pjax:end", () => {
+			console.log("pjax 換頁完成,重新掛載功能");
+			if (isMemberDetailPage()) handleMemberDetailPage();
+			replaceNavLocationSwitch();
+			addQuickLocationButtons();
+			void initFuzzySearchIfTargetUser();
 		});
 	})();
 })();
