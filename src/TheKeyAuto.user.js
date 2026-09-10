@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.3
-// @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,一鍵解除 No show 停權功能,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
+// @version      1.26.0910.4
+// @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -332,13 +332,6 @@
 		}
 		.membership-status-badge.status-default {
 			background-color: #9e9e9e;
-		}
-		.cancel-no-show-container {
-			margin-top: 8px;
-			margin-bottom: 8px;
-		}
-		.cancel-no-show-container .btn {
-			font-size: 13px;
 		}
 		.fuzzy-search-badge-container {
 			margin-top: 8px;
@@ -723,24 +716,6 @@
 			setTimeout(() => waitForElement(selector, callback, retry + 1, maxRetry), 100);
 		} else {
 			console.error(`waitForElement: 超過最大重試次數,未找到元素 ${selector}`);
-		}
-	}
-
-	/**
-	 * 等待指定元素出現且有值後執行 callback
-	 * @param {string} selector CSS 選擇器
-	 * @param {Function} callback 執行函式
-	 * @param {number} [retry=0] 重試次數
-	 * @param {number} [maxRetry=50] 最大重試次數
-	 */
-	function waitForElementWithValue(selector, callback, retry = 0, maxRetry = 50) {
-		const el = document.querySelector(selector);
-		if (el && el.value && el.value.trim() !== "") {
-			callback();
-		} else if (retry < maxRetry) {
-			setTimeout(() => waitForElementWithValue(selector, callback, retry + 1, maxRetry), 100);
-		} else {
-			console.error(`waitForElementWithValue: 超過最大重試次數,未找到有值的元素 ${selector}`);
 		}
 	}
 
@@ -1443,128 +1418,6 @@
 	}
 
 	/**
-	 * 點擊管理按鈕並等待表單載入,取得 merge_id
-	 * @returns {Promise<string|null>} merge_id 或 null
-	 */
-	async function getMergeIdFromNoShowRow() {
-		return new Promise((resolve) => {
-			// 尋找會籍狀態為 "No show 停權中" 的那一列
-			const rows = document.querySelectorAll("#member_package .package_list table tbody tr");
-			let tradeButton = null;
-
-			for (const row of rows) {
-				// 站方改版後狀態不再是固定的第三欄,改讀狀態卡片;仍取不到時退回整列文字比對
-				const statusText = getPackageRowStatusText(row) || row.textContent;
-				if (statusText.includes("No show 停權中")) {
-					// 找到對應的管理按鈕
-					tradeButton = row.querySelector("button.trade_bar");
-					break;
-				}
-			}
-
-			if (!tradeButton) {
-				console.error("找不到 No show 停權中的管理按鈕");
-				resolve(null);
-				return;
-			}
-
-			console.log("找到管理按鈕,準備點擊");
-			// 點擊管理按鈕
-			tradeButton.click();
-
-			// 等待表單載入並取得 merge_id (使用 waitForElementWithValue 等待欄位有值)
-			waitForElementWithValue('#member_package .search_form [name="merge_id"]', () => {
-				const mergeIdInput = document.querySelector('#member_package .search_form [name="merge_id"]');
-				if (mergeIdInput && mergeIdInput.value) {
-					const mergeId = mergeIdInput.value;
-					console.log("成功取得 merge_id:", mergeId);
-					resolve(mergeId);
-				} else {
-					console.error("找不到 merge_id 或值為空");
-					resolve(null);
-				}
-			});
-		});
-	}
-
-	/**
-	 * 執行解除 No show 停權 - 透過點擊頁面上的按鈕
-	 * @returns {Promise<boolean>} 是否成功點擊按鈕
-	 */
-	async function cancelNoShow() {
-		return new Promise(async (resolve, reject) => {
-			try {
-				// 先取得 merge_id
-				const mergeId = await getMergeIdFromNoShowRow();
-
-				if (!mergeId) {
-					console.error("無法取得 merge_id");
-					reject(new Error("無法取得 merge_id"));
-					return;
-				}
-
-				console.log(`已取得 merge_id: ${mergeId}, 準備點擊解除按鈕`);
-
-				// 等待「解除 No show 停權」按鈕出現並點擊
-				// 使用更精確的選擇器,確保選到的是頁面上的按鈕,而不是腳本產生的按鈕
-				waitForElement(".form-actions .cancel_no_show", () => {
-					const cancelButton = document.querySelector(".form-actions .cancel_no_show");
-					if (cancelButton) {
-						console.log("找到「解除 No show 停權」按鈕,準備點擊");
-						cancelButton.click();
-						resolve(true);
-					} else {
-						console.error("找不到「解除 No show 停權」按鈕");
-						reject(new Error("找不到「解除 No show 停權」按鈕"));
-					}
-				});
-			} catch (err) {
-				console.error("cancelNoShow 執行失敗:", err);
-				reject(err);
-			}
-		});
-	}
-
-	/**
-	 * 建立「解除 No show 停權」按鈕
-	 * @returns {HTMLElement|null} 按鈕元素或 null
-	 */
-	function createCancelNoShowButton() {
-		const button = document.createElement("button");
-		button.type = "button";
-		button.className = "btn btn-danger btn-xs cancel_no_show";
-		button.textContent = "解除";
-		button.style.marginLeft = "8px";
-
-		// 綁定點擊事件
-		button.addEventListener("click", async function () {
-			// 確認視窗
-			if (!window.confirm("確定要解除 No show 停權嗎?")) {
-				return;
-			}
-
-			// 禁用按鈕防止重複點擊
-			button.disabled = true;
-			button.textContent = "處理中...";
-
-			try {
-				console.log("開始執行解除 No show 停權...");
-				await cancelNoShow();
-				console.log("已點擊「解除 No show 停權」按鈕");
-
-				// 等待一段時間讓系統處理,然後重新載入頁面
-			} catch (err) {
-				console.error("解除停權失敗:", err);
-				alert(`解除停權失敗：${err.message}`);
-				button.disabled = false;
-				button.textContent = "解除";
-			}
-		});
-
-		return button;
-	}
-
-	/**
 	 * 呼叫 API 取得會員預約課程清單
 	 * @param {string} account 會員帳號(電話號碼)
 	 * @returns {Promise<Object|null>} API 回應資料或 null
@@ -1815,11 +1668,6 @@
 			const badge = document.createElement("span");
 			badge.className = `membership-status-badge ${membershipStatus.badgeClass}`;
 			badge.textContent = membershipStatus.text;
-
-			if (membershipStatus.text === "停權中") {
-				const cancelButton = createCancelNoShowButton();
-				if (cancelButton) badge.appendChild(cancelButton);
-			}
 			titleDiv.appendChild(badge);
 		}
 
@@ -1844,10 +1692,8 @@
 			</div>
 		`;
 
-		// 只在 badge 本身被點擊時顯示彈窗，排除解除按鈕
-		titleDiv.addEventListener("click", (e) => {
-			const cancelBtn = titleDiv.querySelector(".cancel_no_show");
-			if (cancelBtn && (e.target === cancelBtn || cancelBtn.contains(e.target))) return;
+		// 點擊 badge 顯示上課紀錄彈窗
+		titleDiv.addEventListener("click", () => {
 			modal.style.display = "block";
 		});
 
