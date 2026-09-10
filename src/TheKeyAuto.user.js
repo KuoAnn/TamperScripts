@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.7
+// @version      1.26.0910.8
 // @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
@@ -116,16 +116,28 @@
 	// 樣式一律取自站方 Bootstrap 3 主題的實際 token,避免腳本插入的元件與原站風格不一致
 	GM_addStyle(`
 		:root {
-			/* 站方主題色 (取自 .btn-* / .label-* 的 computed style) */
-			--tk-primary: #5d8fc2;
-			--tk-primary-border: #4a82bb;
-			--tk-danger: #dd5826;
-			--tk-danger-border: #ca4e20;
-			--tk-warning: #f0b518;
-			--tk-warning-border: #e0a70f;
-			--tk-success: #64bd63;
-			--tk-success-border: #52b551;
-			--tk-muted: #999999;
+			/*
+			 * 色票以站方主題為基準,但站方原色配白字全部不符 WCAG AA (4.5:1):
+			 *   primary #5d8fc2 3.40:1 / danger #dd5826 3.82:1
+			 *   success #64bd63 2.33:1 / warning #f0b518 1.85:1 / muted #999 2.85:1
+			 * 因此保留色相與飽和度、僅降低亮度到達標為止;warning 白字無解(最高 2.16:1),
+			 * 改為維持站方黃色並改用深色文字。此處只影響腳本自己插入的元件。
+			 */
+			--tk-primary: #4379b1;          /* 白字 4.56:1 */
+			--tk-primary-border: #3a6999;   /* 白字 5.74:1 */
+			--tk-danger: #ca4e20;           /* 白字 4.54:1 */
+			--tk-danger-border: #ad431b;    /* 白字 5.84:1 */
+			--tk-warning: #f0b518;          /* 搭配 --tk-warning-text 深色文字 7.99:1 */
+			--tk-warning-border: #c99a0c;
+			--tk-warning-text: #332600;
+			--tk-success: #3a8639;          /* 白字 4.52:1 */
+			--tk-success-border: #327431;   /* 白字 5.71:1 */
+			--tk-muted: #757575;            /* 白字 4.61:1 */
+			--tk-focus-ring: #1f4b7a;
+			/* 表格內狀態文字 (白底 / 斑馬列淺底) */
+			--tk-status-checkin: #3a8639;   /* 白底 4.52:1 */
+			--tk-status-reserved: #4279b1;  /* 白底 4.56:1 */
+			--tk-status-late: #7a5600;      /* 於 --tk-warning-soft 6.06:1 */
 			/* 中性色 */
 			--tk-text: #555555;
 			--tk-surface: #ffffff;
@@ -176,7 +188,7 @@
 		}
 		.booking-list-table .status-late_cancel {
 			background-color: var(--tk-warning-soft) !important;
-			color: var(--tk-warning-border);
+			color: var(--tk-status-late);
 			font-weight: 600;
 		}
 		.booking-list-table tr.late-cancel-row {
@@ -186,10 +198,10 @@
 			background-color: var(--tk-danger-soft) !important;
 		}
 		.booking-list-table .status-check_in {
-			color: var(--tk-success-border);
+			color: var(--tk-status-checkin);
 		}
 		.booking-list-table .status-reserved {
-			color: var(--tk-primary-border);
+			color: var(--tk-status-reserved);
 		}
 		.booking-list-container {
 			margin-top: 12px;
@@ -239,11 +251,11 @@
 			font-size: 18px;
 			font-weight: 300;
 		}
-		/* 對齊站方 .close */
+		/* 比照站方 .close,但站方的 opacity .2 換算後僅約 1.6:1,提高到符合非文字元件的 3:1 */
 		.booking-modal-close,
 		.settings-modal-close {
 			color: #000;
-			opacity: 0.2;
+			opacity: 0.55;
 			font-size: 21px;
 			font-weight: 700;
 			line-height: 1;
@@ -255,7 +267,7 @@
 		.booking-modal-close:focus,
 		.settings-modal-close:hover,
 		.settings-modal-close:focus {
-			opacity: 0.5;
+			opacity: 0.9;
 		}
 		.action-buttons {
 			display: flex;
@@ -284,12 +296,19 @@
 		.action-btn-cancel {
 			background-color: var(--tk-warning);
 			border-color: var(--tk-warning-border);
+			/* 站方黃色配白字僅 1.85:1,改用深色文字 (7.99:1) */
+			color: var(--tk-warning-text);
+			font-weight: 600;
 		}
 		.action-btn-cancel:hover:not(:disabled) {
 			background-color: var(--tk-warning-border);
+			color: var(--tk-warning-text);
 		}
 		.action-btn:disabled {
-			opacity: 0.65;
+			/* 不用 opacity 壓暗,避免文字對比掉到 AA 以下 */
+			background-color: var(--tk-muted);
+			border-color: var(--tk-muted);
+			color: #fff;
 			cursor: not-allowed;
 		}
 		/* 對齊站方 .btn.btn-sm */
@@ -341,7 +360,9 @@
 			font-weight: 600;
 		}
 		.navbar-location-switch-btn:disabled {
-			opacity: 0.65;
+			background-color: var(--tk-muted);
+			border-color: var(--tk-muted);
+			color: #fff;
 			cursor: progress;
 		}
 		/* 對齊站方 .label (會籍卡片的狀態同樣是 .label) */
@@ -412,12 +433,15 @@
 			background-color: var(--tk-danger-border);
 		}
 		.fuzzy-search-badge.google-auth-badge:disabled {
-			opacity: 0.65;
+			background-color: var(--tk-muted);
+			border-color: var(--tk-muted);
+			color: #fff;
 			cursor: progress;
 		}
 		.google-auth-hint {
 			width: 100%;
 			font-size: 12px;
+			/* #dd5826 於白底僅 3.82:1,改用加深後的 4.54:1 */
 			color: var(--tk-danger);
 			line-height: 1.5;
 		}
@@ -490,11 +514,13 @@
 		.settings-form-group textarea:focus {
 			outline: none;
 			border-color: var(--tk-primary);
-			box-shadow: 0 0 0 2px rgba(93, 143, 194, 0.15);
+			/* 原本的 rgba(...,0.15) 幾乎看不見,不符 2.4.7 焦點可見 */
+			box-shadow: 0 0 0 3px rgba(67, 121, 177, 0.45);
 		}
 		.settings-form-hint {
 			margin-top: 6px;
 			font-size: 12px;
+			/* #999 於白底僅 2.85:1,改用 4.61:1 的 --tk-muted */
 			color: var(--tk-muted);
 			line-height: 1.5;
 		}
@@ -529,6 +555,18 @@
 		}
 		.settings-btn-secondary:hover {
 			background-color: #e6e6e6;
+		}
+		/* WCAG 2.4.7 焦點可見: 站方多數元件沒有焦點樣式,腳本自己的元件補上 */
+		.action-btn:focus-visible,
+		.quick-location-btn:focus-visible,
+		.navbar-location-switch-btn:focus-visible,
+		.fuzzy-search-badge:focus-visible,
+		.settings-btn:focus-visible,
+		.booking-list-title:focus-visible,
+		.booking-modal-close:focus-visible,
+		.settings-modal-close:focus-visible {
+			outline: 2px solid var(--tk-focus-ring);
+			outline-offset: 2px;
 		}
 	`);
 
