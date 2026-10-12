@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         The Key Auto Login
 // @namespace    https://admin.hypercore.com.tw/*
-// @version      1.26.0910.12
-// @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口三顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
+// @version      1.26.1012.0001
+// @description  自動填入帳號密碼並登入 Hyperwell(原 Hypercore) 後台管理系統,登入後自動切換至 THE KEY YOGA 台北古亭館,導覽列切換場館改為古亭/松仁/林口/天母四顆一鍵切換按鈕,檢查會員遲到取消紀錄並顯示上課清單(滿版彈窗),支援黃牌簽到/取消操作,場館切換 modal 新增快速切換按鈕,會籍狀態 badge 顯示,會員查詢電話輸入支援 Google Sheets 模糊搜尋(透過個人 Google 帳號 OAuth 存取),設定介面改為動態彈窗輸入
 // @author       KuoAnn
 // @match        https://admin.hypercore.com.tw/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=hypercore.com.tw
@@ -31,8 +31,8 @@
 	const TARGET_LOCATION_NAME = "古亭";
 	const PENDING_LOCATION_SWITCH_KEY = "thekey_pending_location_switch";
 
-	// 導覽列快速切換的三個場館,順序即顯示順序。以場館名稱關鍵字比對下拉選項,不寫死 location_id
-	const NAV_LOCATIONS = ["古亭", "松仁", "林口"];
+	// 導覽列快速切換的場館,順序即顯示順序。以場館名稱關鍵字比對下拉選項,不寫死 location_id
+	const NAV_LOCATIONS = ["古亭", "松仁", "林口", "天母"];
 
 	/**
 	 * 站方 2026 改版 (Hypercore -> Hyperwell) 後的 DOM 對照表。
