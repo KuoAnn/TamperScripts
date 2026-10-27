@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         國泰自我學習網
+// @name         自我學習網助手
 // @namespace    http://tampermonkey.net/
 // @source       https://github.com/KuoAnn/TampermonkeyUserscripts/raw/main/src/Cathay-Learn.user.js
-// @version      1.1.3
+// @version      1.1.4
 // @author       KuoAnn
 // @match        https://cathay.elearn.com.tw/cltcms/play-index-home.do
 // @connect      *
@@ -13,19 +13,18 @@
 // @grant        GM_addValueChangeListener
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayLearn.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/refs/heads/main/src/CathayLearn.user.js
-// @icon         https://www.cathaysec.com.tw/cathaysec/assets/img/home/news_icon_csc.png
 // ==/UserScript==
 GM_addStyle(`
     .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
     .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
-    .cathay-btn{position:fixed;right:20px;z-index:1000;padding:10px 16px;margin-bottom:5px;border-radius:5px;border:none;font-weight:500;cursor:pointer;transition:all 0.3s ease;box-shadow:0 2px 5px rgba(0,0,0,0.2);}
-    .cathay-btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.3);}
-    .cathay-btn-check{top:10px;background-color:#4CAF50;color:white;}
-    .cathay-btn-check:hover{background-color:#45a049;}
-    .cathay-btn-save{top:60px;background-color:#2196F3;color:white;}
-    .cathay-btn-save:hover{background-color:#0b7dda;}
-    .cathay-btn-read{top:110px;background-color:#ff9800;color:white;}
-    .cathay-btn-read:hover{background-color:#e68a00;}
+	.feature-btn{position:fixed;right:20px;z-index:1000;padding:10px 16px;margin-bottom:5px;border-radius:5px;border:none;font-weight:500;cursor:pointer;transition:all 0.3s ease;box-shadow:0 2px 5px rgba(0,0,0,0.2);}
+	.feature-btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.3);}
+	.feature-btn-check{top:10px;background-color:#4CAF50;color:white;}
+	.feature-btn-check:hover{background-color:#45a049;}
+	.feature-btn-save{top:60px;background-color:#2196F3;color:white;}
+	.feature-btn-save:hover{background-color:#0b7dda;}
+	.feature-btn-read{top:110px;background-color:#ff9800;color:white;}
+	.feature-btn-read:hover{background-color:#e68a00;}
   `);
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, 'div', { class: 'alertContainer' });
@@ -213,15 +212,15 @@ const alert = (text, type = '', timeout = 3333) => {
 	function createAutoAnswerButton() {
 		const submitAllButton = GM_addElement(document.body, 'button', {
 			textContent: '👀 偷看答案',
-			class: 'cathay-btn cathay-btn-check',
+			class: 'feature-btn feature-btn-check',
 		});
 		const saveAnswerButton = GM_addElement(document.body, 'button', {
 			textContent: '💾 製作小抄',
-			class: 'cathay-btn cathay-btn-save',
+			class: 'feature-btn feature-btn-save',
 		});
 		const writeAnswerButton = GM_addElement(document.body, 'button', {
 			textContent: '📖 快樂作弊',
-			class: 'cathay-btn cathay-btn-read',
+			class: 'feature-btn feature-btn-read',
 		});
 
 		submitAllButton.addEventListener('click', function () {
@@ -263,9 +262,9 @@ const alert = (text, type = '', timeout = 3333) => {
 	function logError(msg, err) {
 		alert(msg, 'error');
 		if (err) {
-			console.error(`[CathayLearn] ${msg}`, err);
+			console.error(`[LearningAssistant] ${msg}`, err);
 		} else {
-			console.error(`[CathayLearn] ${msg}`);
+			console.error(`[LearningAssistant] ${msg}`);
 		}
 	}
 

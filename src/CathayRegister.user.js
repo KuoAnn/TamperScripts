@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         大家來報報 輔助報名
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @author       KuoAnn
 // @description  自動勾選同意條款並取得申請資訊，強化錯誤處理與安全性
 // @match        https://agent2.cathaylife.com.tw/PDAC/
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=cathaylife.com.tw
 // @grant        GM_addStyle
 // @grant        GM_addElement
 // @grant        GM_xmlhttpRequest
@@ -19,14 +18,14 @@
 GM_addStyle(`
     .alertContainer{position:fixed;top:6px;left:6px;z-index:9999;pointer-events:none;}
     .alertMessage{background:rgba(94,39,0,0.7);color:white;padding:4px;margin:4px;border-radius:5px;pointer-events:auto;font-size:14px;}
-    .cathay-btn{position:fixed;right:20px;z-index:1000;padding:10px 16px;margin-bottom:5px;border-radius:5px;border:none;font-weight:500;cursor:pointer;transition:all 0.3s ease;box-shadow:0 2px 5px rgba(0,0,0,0.2);}
-    .cathay-btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.3);}
-    .cathay-btn-check{top:10px;background-color:#4CAF50;color:white;}
-    .cathay-btn-check:hover{background-color:#45a049;}
-    .cathay-btn-save{top:60px;background-color:#2196F3;color:white;}
-    .cathay-btn-save:hover{background-color:#0b7dda;}
-    .cathay-btn-read{top:110px;background-color:#ff9800;color:white;}
-    .cathay-btn-read:hover{background-color:#e68a00;}
+    .feature-btn{position:fixed;right:20px;z-index:1000;padding:10px 16px;margin-bottom:5px;border-radius:5px;border:none;font-weight:500;cursor:pointer;transition:all 0.3s ease;box-shadow:0 2px 5px rgba(0,0,0,0.2);}
+    .feature-btn:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.3);}
+    .feature-btn-check{top:10px;background-color:#4CAF50;color:white;}
+    .feature-btn-check:hover{background-color:#45a049;}
+    .feature-btn-save{top:60px;background-color:#2196F3;color:white;}
+    .feature-btn-save:hover{background-color:#0b7dda;}
+    .feature-btn-read{top:110px;background-color:#ff9800;color:white;}
+    .feature-btn-read:hover{background-color:#e68a00;}
   `);
 const alertMQ = [];
 const alertDiv = GM_addElement(document.body, "div", { class: "alertContainer" });
@@ -252,7 +251,7 @@ const pageAlert = (text, type = "", ...otherMsgs) => {
     let robotTargetTime = null;
     let robotKeywords = "";
     const robotBtn = GM_addElement(document.body, "button", {
-        class: "cathay-btn cathay-btn-check",
+        class: "feature-btn feature-btn-check",
         style: "bottom:20px;right:20px;left:auto;top:auto;background:#4CAF50;min-width:100px;",
         textContent: "🤖 搶課",
     });

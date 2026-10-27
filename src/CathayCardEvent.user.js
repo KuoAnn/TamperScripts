@@ -1,12 +1,11 @@
 // ==UserScript==
-// @name         國泰信用卡活動自動登錄
+// @name         信用卡活動自動登錄
 // @namespace    https://www.cathaybk.com.tw/promotion/CreditCard/Event
-// @version      1.0.8
-// @description  自動參加國泰信用卡登錄活動，填入個人資訊並自動辨識驗證碼。
+// @version      1.0.9
+// @description  自動參加信用卡登錄活動，填入個人資訊並自動辨識驗證碼。
 // @author       KuoAnn
 // @match        https://www.cathaybk.com.tw/promotion*
 // @connect      *
-// @icon         https://www.google.com/s2/favicons?sz=16&domain=https://www.cathaybk.com.tw%2fcathaybk
 // @downloadURL  https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
 // @updateURL    https://github.com/KuoAnn/TamperScripts/raw/main/src/CathayCardEvent.user.js
 // @grant        GM_xmlhttpRequest
